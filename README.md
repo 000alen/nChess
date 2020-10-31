@@ -6,6 +6,6 @@ This is a work-in-progress implementation of a n - dimensional chess game.
 
 - [ ] Check (mate) detector.
     - [ ] Stalemate.
-- [ ] Promotion of Pawns.
+- [x] Promotion of Pawns.
 - [ ] Knight 'jump' mechanics.
 - [ ] Create (more) tests.

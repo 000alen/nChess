@@ -103,10 +103,10 @@ class Board:
         assert piece.valid_next(self, initial_position, final_position, color)
 
         if final_position in self.board:
-            del self.board[final_position]
+            self.remove(final_position)
 
-        self.board[final_position] = self.board[initial_position]
-        del self.board[initial_position]
+        self.add(piece, final_position, color)
+        self.remove(initial_position)
 
     def remove(self, position: Tuple[int, ...]):
         """Removes a piece from the Board."""
@@ -117,3 +117,12 @@ class Board:
     def in_bounds(self, position: Tuple[int, ...]) -> bool:
         """Checks if a piece is inside the Board bounds."""
         return all(0 <= i < self.size for i in position)
+
+    def promote(self, position: Tuple[int, ...], final_piece: Type[Piece]):
+        """Promotes a piece."""
+        color, initial_piece = self.get(position)
+        assert initial_piece.is_promotion_available(self, position, color)
+        assert final_piece in initial_piece.promotions
+
+        self.remove(position)
+        self.add(final_piece, position, color)

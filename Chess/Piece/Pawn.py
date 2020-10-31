@@ -1,10 +1,21 @@
-from typing import Tuple
+from typing import Tuple, List, Type
 
 from Chess.Piece import Piece
+from Chess.Piece.Bishop import Bishop
+from Chess.Piece.Knight import Knight
+from Chess.Piece.Queen import Queen
+from Chess.Piece.Rook import Rook
 
 
 class Pawn(Piece):
     """Implements the Pawn piece and its generalization to higher dimensions."""
+
+    promotions: List[Type[Piece]] = [Bishop, Knight, Queen, Rook]
+
+    @staticmethod
+    def is_promotion_available(board, position: Tuple[int, ...], color):
+        from Chess.Board import Color
+        return all(i == (board.size - 1 if color == Color.WHITE else 0) for i in position[1:])
 
     @staticmethod
     def next(board, position: Tuple[int, ...], color):

@@ -3,7 +3,7 @@ from unittest import TestCase
 from Chess.Board import Board, Color
 from Chess.Piece import Piece
 from Chess.Piece.Queen import Queen
-
+from Chess.Piece.Pawn import Pawn
 
 class TestBoard(TestCase):
     def test_add(self):
@@ -72,3 +72,13 @@ class TestBoard(TestCase):
         for i in range(4):
             for j in range(4):
                 self.assertTrue(board.in_bounds((i, j)))
+
+    def test_promotion(self):
+        board = Board(4, 2)
+        board.add(Pawn, (0, 0), Color.WHITE)
+
+        for i in range(3):
+            board.move((0, i), (0, i + 1))
+
+        board.promote((0, 3), Queen)
+        self.assertEqual(Queen, board.get((0, 3))[1])
