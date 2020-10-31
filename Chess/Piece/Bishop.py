@@ -1,16 +1,11 @@
-from typing import List
+from typing import Tuple
 
-from Chess.Annotation import PositionType, Color
-from Chess.Piece.Piece import Piece
+from Chess.Piece import Piece
 
 
 class Bishop(Piece):
-    representation = {
-        Color.WHITE: "♗",
-        Color.BLACK: "♝"
-    }
+    """Implements the Bishop piece and its generalization for higher dimensions."""
 
-    def available_next(
-            self,
-    ) -> List[PositionType]:
-        return self.ad_nauseam(self.board.diagonals, self.board.size)
+    @staticmethod
+    def next(board, position: Tuple[int, ...], color):
+        return Piece.ad_nauseam(board, position, color, board.diagonals, board.size)

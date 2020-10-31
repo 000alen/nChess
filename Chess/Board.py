@@ -1,142 +1,119 @@
-from typing import List
+from enum import Enum, auto
+from typing import Dict, Tuple, List, Type
 
-from Chess.Annotation import DistributionType, BoardType, PositionType, Color
-from Chess.Distribution import Classic
+from Chess.Piece import Piece
 
-__all__ = (
-    "Board"
-)
+
+class Color(Enum):
+    """Stores the piece colors."""
+
+    WHITE = auto()
+    BLACK = auto()
 
 
 class Board:
+    """Stores and manages the pieces.
+
+    Attributes:
+        size (int)
+        dimension (int)
+    """
     size: int
     dimension: int
-    pieces: BoardType
-    turn: Color
 
-    cardinals: List[PositionType] = None
-    diagonals: List[PositionType] = None
+    board: Dict[Tuple[int, ...], Tuple[Color, Type[Piece]]]
+    cardinals: List[Tuple[int, ...]]
+    diagonals: List[Tuple[int, ...]]
+    L: List[Tuple[int, ...]]
+    basis: List[Tuple[int, ...]]
 
-    def __init__(
-            self,
-            size: int = 8,
-            dimension: int = 2,
-            distribution: DistributionType = Classic
-    ):
+    def __init__(self, size: int = 8, dimension: int = 2):
+        assert dimension >= 2
         self.size = size
         self.dimension = dimension
-        self.pieces = []
-        self.turn = Color.WHITE
-        self._compute_cardinals()
-        self._compute_diagonals()
-        self._load_distribution(distribution)
+        self.board = {}
+        self.compute_cardinals()
+        self.compute_diagonals()
+        self.compute_L()
+        self.compute_basis()
 
-    def __contains__(self, position: PositionType):
-        return self.contains(position)
-
-    def _compute_cardinals(self):
-        self.cardinals = [
-            tuple(k if j == i else 0 for j in range(self.dimension))
-            for i in range(self.dimension)
-            for k in (-1, 1)
-        ]
-
-    def _compute_diagonals(self):
-        from itertools import product
-        self.diagonals = list(
-            tuple((1, -1)[i] for i in indices)
-            for indices in product(range(2), repeat=self.dimension)
-        )
-
-    def _load_distribution(
-            self,
-            distribution: DistributionType
-    ):
-        for color, board in distribution.items():
-            for position, piece_type in board.items():
-                assert len(position) == self.dimension
-                self.add(
-                    position
-                    if color is Color.WHITE
-                    else tuple(self.size - coordinate - 1 for coordinate in position),
-                    color,
-                    piece_type
+    def compute_cardinals(self):
+        self.cardinals = []
+        for i in range(self.dimension):
+            for offset in (-1, 1):
+                self.cardinals.append(
+                    tuple(offset if j == i else 0 for j in range(self.dimension))
                 )
 
-    def next_turn(self):
-        self.turn = Color.BLACK if self.turn is Color.WHITE else Color.WHITE
+    def compute_diagonals(self):
+        from itertools import product
+        self.diagonals = []
+        for partial_dimension in range(2, self.dimension + 1):
+            for indices in product(range(2), repeat=partial_dimension):
+                diagonal = tuple((1, -1)[i] for i in indices)
+                self.diagonals.append(
+                    diagonal
+                    if len(diagonal) == self.dimension
+                    else diagonal + (0,) * (self.dimension - len(diagonal))
+                )
 
-    def is_check(
-            self,
-            color: Color
-    ) -> bool:
-        from Chess.Piece.King import King
-        king_position = None
-        base_positions = []
-        for piece in self.pieces:
-            if isinstance(piece, King) and piece.color is color:
-                king_position = piece.position
-            elif piece.color is not color:
-                base_positions.append(piece.position)
-        if king_position:
-            return any(
-                self.get(base_position).is_valid_next(king_position)
-                for base_position in base_positions
-            )
+    def compute_L(self):
+        from itertools import product
+        self.L = []
+        for i in range(self.dimension):
+            for j in range(self.dimension):
+                if i == j:
+                    continue
+                for p, q in product((-1, 1), repeat=2):
+                    move = [0] * self.dimension
+                    move[i] = 2 * p
+                    move[j] = q
+                    self.L.append(tuple(move))
 
-    def in_bounds(
-            self,
-            position: PositionType
-    ) -> bool:
+    def compute_basis(self):
+        self.basis = []
+        for i in range(self.dimension):
+            u = [0] * self.dimension
+            u[i] = 1
+            self.basis.append(tuple(u))
+
+    def add(self, piece: Type[Piece], position: Tuple[int, ...], color: Color):
+        """Adds a piece to the Board."""
         assert len(position) == self.dimension
-        return all(
-            0 <= i < self.size
-            for i in position
-        )
+        assert position not in self.board
+        self.board[position] = (color, piece)
 
-    def contains(
-            self,
-            position: PositionType
-    ) -> bool:
-        assert self.in_bounds(position)
-        return any(piece.position == position for piece in self.pieces)
+    def contains(self, position: Tuple[int, ...]) -> bool:
+        """Checks if a piece is contained in the Board."""
+        assert len(position) == self.dimension
+        return position in self.board
 
-    def add(
-            self,
-            position: PositionType,
-            color: Color,
-            piece_type
-    ):
-        assert self.in_bounds(position)
-        self.pieces.append(piece_type(self, position, color))
+    def get(self, position: Tuple[int, ...]) -> Tuple[Color, Type[Piece]]:
+        """Returns the piece in the specified position."""
+        assert len(position) == self.dimension
+        return self.board[position]
 
-    def get(
-            self,
-            position: PositionType
-    ):
-        assert self.in_bounds(position)
-        for piece in self.pieces:
-            if piece.position == position:
-                return piece
+    def move(self, initial_position: Tuple[int, ...], final_position: Tuple[int, ...]):
+        """Moves a piece from one position to another; handles captures."""
+        assert len(initial_position) == self.dimension
+        assert len(final_position) == self.dimension
+        assert initial_position in self.board
 
-    def move(
-            self,
-            start: PositionType,
-            end: PositionType
-    ):
-        assert self.contains(start)
-        assert self.in_bounds(end)
-        target = self.get(start)
-        if target.is_valid_next(end):
-            if self.contains(end):
-                self.remove(end)
-            target.move(end)
-        else:
-            raise Exception
+        color, piece = self.get(initial_position)
+        assert piece.valid_next(self, initial_position, final_position, color)
 
-    def remove(
-            self,
-            position: PositionType
-    ):
-        assert self.in_bounds(position)
-        self.pieces.remove(self.get(position))
+        if final_position in self.board:
+            del self.board[final_position]
+
+        self.board[final_position] = self.board[initial_position]
+        del self.board[initial_position]
+
+    def remove(self, position: Tuple[int, ...]):
+        """Removes a piece from the Board."""
+        assert len(position) == self.dimension
+        assert position in self.board
+        del self.board[position]
+
+    def in_bounds(self, position: Tuple[int, ...]) -> bool:
+        """Checks if a piece is inside the Board bounds."""
+        return all(0 <= i < self.size for i in position)

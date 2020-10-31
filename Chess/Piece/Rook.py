@@ -1,16 +1,11 @@
-from typing import List
+from typing import Tuple
 
-from Chess.Annotation import PositionType, Color
-from Chess.Piece.Piece import Piece
+from Chess.Piece import Piece
 
 
 class Rook(Piece):
-    representation = {
-        Color.WHITE: "♖",
-        Color.BLACK: "♜"
-    }
+    """Implements the Rook piece and its generalization to higher dimensions."""
 
-    def available_next(
-            self,
-    ) -> List[PositionType]:
-        return self.ad_nauseam(self.board.cardinals, self.board.size)
+    @staticmethod
+    def next(board, position: Tuple[int, ...], color):
+        return Piece.ad_nauseam(board, position, color, board.cardinals, board.size)
