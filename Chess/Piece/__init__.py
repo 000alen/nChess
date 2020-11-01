@@ -21,6 +21,8 @@ class Piece:
                 # noinspection PyTypeChecker
                 if Piece.no_conflict(board, position, new_position, color):
                     movements.append(new_position)
+                else:
+                    break
         return movements
 
     @staticmethod

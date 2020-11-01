@@ -18,6 +18,7 @@ class Board:
         size (int)
         dimension (int)
     """
+
     size: int
     dimension: int
 
@@ -38,37 +39,34 @@ class Board:
         self.compute_basis()
 
     def compute_cardinals(self):
-        self.cardinals = []
-        for i in range(self.dimension):
-            for offset in (-1, 1):
-                self.cardinals.append(
-                    tuple(offset if j == i else 0 for j in range(self.dimension))
-                )
+        self.cardinals = [
+            tuple(j if k == i else 0 for k in range(self.dimension))
+            for j in (-1, 1)
+            for i in range(self.dimension)
+        ]
 
     def compute_diagonals(self):
         from itertools import product
-        self.diagonals = []
-        for partial_dimension in range(2, self.dimension + 1):
-            for indices in product(range(2), repeat=partial_dimension):
-                diagonal = tuple((1, -1)[i] for i in indices)
-                self.diagonals.append(
-                    diagonal
-                    if len(diagonal) == self.dimension
-                    else diagonal + (0,) * (self.dimension - len(diagonal))
-                )
+        self.diagonals = [
+            tuple((1, -1)[k] for k in J) if i == self.dimension
+            else tuple((-1, 1)[k] for k in J) + (0,) * (self.dimension - i)
+            for i in range(2, self.dimension + 1)
+            for J in product(range(2), repeat=i)
+        ]
 
     def compute_L(self):
         from itertools import product
-        self.L = []
+        L = set()
         for i in range(self.dimension):
             for j in range(self.dimension):
                 if i == j:
                     continue
                 for p, q in product((-1, 1), repeat=2):
-                    move = [0] * self.dimension
-                    move[i] = 2 * p
-                    move[j] = q
-                    self.L.append(tuple(move))
+                    movement = [0] * self.dimension
+                    movement[i] = 2 * p
+                    movement[j] = q
+                    L.add(tuple(movement))
+        self.L = list(L)
 
     def compute_basis(self):
         self.basis = []

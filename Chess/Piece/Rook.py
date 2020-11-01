@@ -8,4 +8,4 @@ class Rook(Piece):
 
     @staticmethod
     def next(board, position: Tuple[int, ...], color):
-        return Piece.ad_nauseam(board, position, color, board.cardinals, board.size)
+        return Piece.ad_nauseam(board, position, color, board.cardinals, board.size - 1)

@@ -18,8 +18,9 @@ class Pawn(Piece):
         return all(i == (board.size - 1 if color == Color.WHITE else 0) for i in position[1:])
 
     @staticmethod
-    def next(board, position: Tuple[int, ...], color):
+    def next(board, position: Tuple[int, ...], color, is_first_movement: bool = False):
         movements = Piece.ad_nauseam(board, position, color, board.basis[1:], 1)
+        first_movements = Piece.ad_nauseam(board, position, color, board.basis[1:], 2) if is_first_movement else []
 
         capture_movements = []
         for movement in movements:
@@ -29,4 +30,4 @@ class Pawn(Piece):
                 if Piece.no_conflict(board, position, new_position, color) and board.contains(new_position):
                     capture_movements.append(new_position)
 
-        return movements + capture_movements
+        return movements + first_movements + capture_movements
