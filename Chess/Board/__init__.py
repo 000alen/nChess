@@ -56,17 +56,15 @@ class Board:
 
     def compute_L(self):
         from itertools import product
-        L = set()
+        self.L = []
         for i in range(self.dimension):
             for j in range(self.dimension):
-                if i == j:
-                    continue
+                if i == j: continue
                 for p, q in product((-1, 1), repeat=2):
                     movement = [0] * self.dimension
                     movement[i] = 2 * p
                     movement[j] = q
-                    L.add(tuple(movement))
-        self.L = list(L)
+                    self.L.append(tuple(movement))
 
     def compute_basis(self):
         self.basis = []
@@ -95,12 +93,12 @@ class Board:
         """Moves a piece from one position to another; handles captures."""
         assert len(initial_position) == self.dimension
         assert len(final_position) == self.dimension
-        assert initial_position in self.board
+        assert self.contains(initial_position)
 
         color, piece = self.get(initial_position)
         assert piece.valid_next(self, initial_position, final_position, color)
 
-        if final_position in self.board:
+        if self.contains(final_position):
             self.remove(final_position)
 
         self.add(piece, final_position, color)
@@ -121,6 +119,5 @@ class Board:
         color, initial_piece = self.get(position)
         assert initial_piece.is_promotion_available(self, position, color)
         assert final_piece in initial_piece.promotions
-
         self.remove(position)
         self.add(final_piece, position, color)

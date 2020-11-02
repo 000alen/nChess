@@ -161,8 +161,8 @@ RookOffsets = [
 
 # To do
 
-- [ ] Check (mate) detector.
-    - [ ] Stalemate.
-- [x] Promotion of Pawns.
+- [ ] Check (mate).
+- [ ] Stalemate.
 - [ ] Knight 'jump' mechanics.
-- [ ] Create (more) tests.
+- [ ] Castling.
+- [x] Pawn promotion.
