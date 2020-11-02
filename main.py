@@ -11,13 +11,17 @@ from Chess.Utility import SymbolRepresentation, LetterRepresentation, print_2d_b
 
 board = Board(5, 2)
 
-board.add(Knight, (2, 2), Color.WHITE)
+pawn_position = (0, 0)
+board.add(Pawn, pawn_position, Color.WHITE)
 
-board.add(Pawn, (1, 2), Color.BLACK)
-board.add(Pawn, (0, 2), Color.BLACK)
-board.add(Pawn, (2, 1), Color.BLACK)
+while True:
+    print_2d_board(
+        board,
+        focus_position=pawn_position
+    )
 
-print_2d_board(
-    board,
-    focus_position=(2, 2)
-)
+    i, j = (int(_) for _ in input().split())
+    p, q = (int(_) for _ in input().split())
+
+    board.move((i, j), (p, q))
+    pawn_position = (p, q)

@@ -18,7 +18,7 @@ class Pawn(Piece):
         return all(i == (board.size - 1 if color == Color.WHITE else 0) for i in position[1:])
 
     @staticmethod
-    def next(board, position: Tuple[int, ...], color, is_first_movement: bool = False):
+    def next(board, position: Tuple[int, ...], color, is_first_movement: bool):
         movements = Piece.ad_nauseam(board, position, color, board.basis[1:], 1)
         first_movements = Piece.ad_nauseam(board, position, color, board.basis[1:], 2) if is_first_movement else []
 

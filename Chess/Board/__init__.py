@@ -23,6 +23,8 @@ class Board:
     dimension: int
 
     board: Dict[Tuple[int, ...], Tuple[Color, Type[Piece]]]
+    is_first_movement: Dict[Tuple[int, ...], bool]
+
     cardinals: List[Tuple[int, ...]]
     diagonals: List[Tuple[int, ...]]
     L: List[Tuple[int, ...]]
@@ -33,6 +35,7 @@ class Board:
         self.size = size
         self.dimension = dimension
         self.board = {}
+        self.is_first_movement = {}
         self.compute_cardinals()
         self.compute_diagonals()
         self.compute_L()
@@ -78,6 +81,7 @@ class Board:
         assert len(position) == self.dimension
         assert position not in self.board
         self.board[position] = (color, piece)
+        self.is_first_movement[position] = True
 
     def contains(self, position: Tuple[int, ...]) -> bool:
         """Checks if a piece is contained in the Board."""
@@ -96,19 +100,21 @@ class Board:
         assert self.contains(initial_position)
 
         color, piece = self.get(initial_position)
-        assert piece.valid_next(self, initial_position, final_position, color)
+        assert piece.valid_next(self, initial_position, final_position, color, self.is_first_movement[initial_position])
 
         if self.contains(final_position):
             self.remove(final_position)
 
         self.add(piece, final_position, color)
         self.remove(initial_position)
+        self.is_first_movement[final_position] = False
 
     def remove(self, position: Tuple[int, ...]):
         """Removes a piece from the Board."""
         assert len(position) == self.dimension
         assert position in self.board
         del self.board[position]
+        del self.is_first_movement[position]
 
     def promote(self, position: Tuple[int, ...], final_piece: Type[Piece]):
         """Promotes a piece."""
@@ -117,6 +123,7 @@ class Board:
         assert final_piece in initial_piece.promotions
         self.remove(position)
         self.add(final_piece, position, color)
+        self.is_first_movement[position] = False
 
     def in_bounds(self, position: Tuple[int, ...]) -> bool:
         """Checks if a piece is inside the Board bounds."""

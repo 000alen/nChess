@@ -55,7 +55,7 @@ def print_2d_board(
     if focus_position is not None:
         assert board.contains(focus_position)
         focus_color, focus_piece = board.get(focus_position)
-        focus_next = focus_piece.next(board, focus_position, focus_color)
+        focus_next = focus_piece.next(board, focus_position, focus_color, board.is_first_movement[focus_position])
     else:
         focus_next = []
 

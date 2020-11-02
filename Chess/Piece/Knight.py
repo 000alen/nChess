@@ -7,7 +7,7 @@ class Knight(Piece):
     """Implements the Knight piece and its generalization to higher dimensions."""
 
     @staticmethod
-    def next(board, position, color):
+    def next(board, position: Tuple[int, ...], color, is_first_movement: bool):
         movements = []
         for offset in board.L:
             final_position = tuple(position[i] + offset[i] for i in range(board.dimension))

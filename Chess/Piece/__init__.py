@@ -7,9 +7,16 @@ class Piece:
     promotions: List[Type["Piece"]]
 
     @classmethod
-    def valid_next(cls, board, initial_position: Tuple[int, ...], final_position: Tuple[int, ...], color):
+    def valid_next(
+            cls,
+            board,
+            initial_position: Tuple[int, ...],
+            final_position: Tuple[int, ...],
+            color,
+            is_first_movement: bool
+    ):
         """Checks if a given position is a valid movement."""
-        return final_position in cls.next(board, initial_position, color)
+        return final_position in cls.next(board, initial_position, color, is_first_movement)
 
     @staticmethod
     def ad_nauseam(board, position: Tuple[int, ...], color, offsets: List[Tuple[int, ...]], maximum_magnitude: int):
@@ -42,6 +49,6 @@ class Piece:
         return False
 
     @staticmethod
-    def next(board, position: Tuple, color):
+    def next(board, position: Tuple, color, is_first_movement: bool):
         """Returns all the possible movements."""
         raise NotImplementedError
