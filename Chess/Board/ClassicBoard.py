@@ -1,5 +1,6 @@
-from Chess.Board import Color
-from Chess.Board.TurnBoard import TurnBoard
+from abc import ABC
+
+from Chess.Board import Board, Color
 from Chess.Piece.Bishop import Bishop
 from Chess.Piece.King import King
 from Chess.Piece.Knight import Knight
@@ -11,7 +12,7 @@ Pawns = (Pawn for _ in range(8))
 Royalty = (Rook, Knight, Bishop, Queen, King, Bishop, Knight, Rook)
 
 
-class ClassicBoard(TurnBoard):
+class ClassicBoard(Board, ABC):
     def __init__(self):
         super().__init__(8, 2)
 
@@ -24,3 +25,6 @@ class ClassicBoard(TurnBoard):
 
         for j, piece in enumerate(reversed(Royalty)):
             self.add(piece, (7, j), Color.BLACK)
+
+    def castling(self):
+        pass

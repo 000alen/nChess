@@ -1,7 +1,8 @@
+from abc import ABC, abstractmethod
 from typing import Tuple, List, Type
 
 
-class Piece:
+class Piece(ABC):
     """Baseclass for all Pieces."""
 
     promotions: List[Type["Piece"]]
@@ -49,6 +50,7 @@ class Piece:
         return False
 
     @staticmethod
+    @abstractmethod
     def next(board, position: Tuple, color, is_first_movement: bool):
         """Returns all the possible movements."""
         raise NotImplementedError
