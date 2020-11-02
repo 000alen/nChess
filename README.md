@@ -163,6 +163,6 @@ RookOffsets = [
 
 - [ ] Check (mate).
 - [ ] Stalemate.
-- [ ] Knight 'jump' mechanics.
 - [ ] Castling.
+- [x] Knight 'jump' mechanics.
 - [x] Pawn promotion.

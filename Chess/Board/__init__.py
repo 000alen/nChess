@@ -110,10 +110,6 @@ class Board:
         assert position in self.board
         del self.board[position]
 
-    def in_bounds(self, position: Tuple[int, ...]) -> bool:
-        """Checks if a piece is inside the Board bounds."""
-        return all(0 <= i < self.size for i in position)
-
     def promote(self, position: Tuple[int, ...], final_piece: Type[Piece]):
         """Promotes a piece."""
         color, initial_piece = self.get(position)
@@ -121,3 +117,16 @@ class Board:
         assert final_piece in initial_piece.promotions
         self.remove(position)
         self.add(final_piece, position, color)
+
+    def in_bounds(self, position: Tuple[int, ...]) -> bool:
+        """Checks if a piece is inside the Board bounds."""
+        return all(0 <= i < self.size for i in position)
+
+    def in_check(self, color: Color):
+        raise NotImplementedError
+
+    def in_checkmate(self, color: Color):
+        raise NotImplementedError
+
+    def in_stalemate(self):
+        raise NotImplementedError
