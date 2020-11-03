@@ -1,17 +1,24 @@
-from typing import Tuple
+from typing import Tuple, Type, TypeVar
 
 from Chess.Piece import Piece
+
+_Piece = Type[Piece]
+_Position = Tuple[int, ...]
+_Color = TypeVar("_Color")
 
 
 class Knight(Piece):
     """Implements the Knight piece and its generalization to higher dimensions."""
 
     @staticmethod
-    def next(board, position: Tuple[int, ...], color, is_first_movement: bool):
+    def next(
+            board,
+            position: _Position
+    ):
         movements = []
         for offset in board.L:
             final_position = tuple(position[i] + offset[i] for i in range(board.dimension))
-            if not Piece.no_conflict(board, position,  final_position, color):
+            if not Knight.no_conflict(board, position, final_position):
                 continue
             x, y = (i for i, j in enumerate(offset) if j)
             partial_pieces = 0

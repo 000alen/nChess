@@ -14,5 +14,5 @@ board.add(Pawn, (2, 3, 2), Color.BLACK)
 board.add(Pawn, (3, 3, 3), Color.BLACK)
 
 print_2d_board(
-    Board.reduce_dimensionality(board[:, :, :2], (True, True, False))
+    board.select((False, True, True))
 )

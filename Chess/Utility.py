@@ -8,6 +8,8 @@ from Chess.Piece.Pawn import Pawn
 from Chess.Piece.Queen import Queen
 from Chess.Piece.Rook import Rook
 
+_Position = Tuple[int, ...]
+
 SymbolRepresentation = {
     (Color.WHITE, Bishop): "♗",
     (Color.WHITE, King): "♔",
@@ -47,7 +49,7 @@ def print_2d_board(
         empty: str = ".",
         focus: str = "x",
         representation=None,
-        focus_position: Tuple[int, ...] = None
+        focus_position: _Position = None
 ):
     assert board.dimension == 2
     representation = LetterRepresentation if representation is None else representation
