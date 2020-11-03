@@ -13,6 +13,13 @@ board.add(Pawn, (1, 3, 1), Color.BLACK)
 board.add(Pawn, (2, 3, 2), Color.BLACK)
 board.add(Pawn, (3, 3, 3), Color.BLACK)
 
+
+print_2d_board(
+    board.select((True, True, False))
+)
+
+print()
+
 print_2d_board(
     board.select((False, True, True))
 )
