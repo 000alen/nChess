@@ -10,8 +10,10 @@ _Color = TypeVar("_Color")
 class Rook(Piece):
     """Implements the Rook piece and its generalization to higher dimensions."""
 
+    is_promotion_available = staticmethod(lambda board, position: False)
+
     @staticmethod
-    def next(
+    def _unfiltered_movements(
             board,
             position: _Position
     ):

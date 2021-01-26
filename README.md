@@ -161,10 +161,11 @@ RookOffsets = [
 
 # To do
 
-- [ ] Check (mate).
-- [ ] Stalemate.
 - [ ] Castling.
-- [ ] Restrict King movement.
 - [ ] Add event listeners.
+- [x] Check.
+- [x] Checkmate
+- [x] Stalemate.
+- [x] Restrict King movement.
 - [x] Knight 'jump' mechanics.
 - [x] Pawn promotion.

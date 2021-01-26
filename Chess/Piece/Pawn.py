@@ -25,19 +25,20 @@ class Pawn(Piece):
         return all(i == (board.size - 1 if board.get(position).color == Color.WHITE else 0) for i in position[1:])
 
     @staticmethod
-    def next(
-            board,
-            position: _Position
+    def _unfiltered_movements(
+        board, 
+        position: _Position,
+        capture_axis: int = 0
     ):
-        movements = Pawn.ad_nauseam(board, position, board.basis[1:], 1)
-        first_movements = Pawn.ad_nauseam(board, position, board.basis[1:], 2) \
-            if board.is_first_movement(position) else []
+        movement_offsets = board.basis[:capture_axis] + board.basis[capture_axis + 1:]
+        movements = Pawn.ad_nauseam(board, position, movement_offsets, 2 if board.is_first_movement(position) else 1)
 
-        capture_movements = []
+        capture_offset = board.basis[capture_axis]
+        captures = []
         for movement in movements:
             for i in (-1, 1):
-                new_position = (movement[0] + i, *movement[1:])
-                if Pawn.no_conflict(board, position, new_position) and board.contains(new_position):
-                    capture_movements.append(new_position)
-
-        return movements + first_movements + capture_movements
+                partial_capture = tuple(movement[j] + i * capture_offset[j] for j in range(board.dimension))
+                if board.no_conflict(position, partial_capture) and board.contains(partial_capture):
+                    captures.append(partial_capture)
+        
+        return movements + captures

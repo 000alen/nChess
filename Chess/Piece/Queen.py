@@ -10,8 +10,10 @@ _Color = TypeVar("_Color")
 class Queen(Piece):
     """Implements the Queen piece and its generalization to higher dimensions."""
 
+    is_promotion_available = staticmethod(lambda board, position: False)
+
     @staticmethod
-    def next(
+    def _unfiltered_movements(
             board,
             position: _Position
     ):

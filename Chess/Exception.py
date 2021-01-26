@@ -22,7 +22,7 @@ class InvalidBoardTurnOrder(ValueError):
         super().__init__(self.message)
 
 
-class UnexpectedPosition(ValueError):
+class InvalidPosition(ValueError):
     def __init__(self, invalid_position: _Position, expected_size: int, expected_dimension: int):
         self.message = f"Unexpected position of dimension {len(invalid_position)}. Expected dimension: " \
                        f"{expected_dimension}. Expected component range: [0, {expected_size}]"

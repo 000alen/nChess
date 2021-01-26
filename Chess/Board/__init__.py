@@ -1,7 +1,8 @@
+from Chess.Piece.King import King
 from enum import Enum, auto
 from typing import Dict, Tuple, Type, Iterator, TypeVar, Union, NamedTuple
 
-from Chess.Exception import InvalidBoardSize, InvalidBoardDimension, InvalidBoardTurnOrder, UnexpectedPosition, SelectionOverlapping
+from Chess.Exception import InvalidBoardSize, InvalidBoardDimension, InvalidBoardTurnOrder, InvalidPosition, SelectionOverlapping
 from Chess.Piece import Piece
 
 _Piece = Type[Piece]
@@ -63,32 +64,32 @@ class Board:
         self._is_first_movement = {}
         self._turn_number = turn_number
         self._turn_order = turn_order
-        self._cardinals = self._compute_cardinals()
-        self._diagonals = self._compute_diagonals()
-        self._L = self._compute_L()
-        self._basis = self._compute_basis()
+        self._cardinals = Board._compute_cardinals(self._dimension)
+        self._diagonals = Board._compute_diagonals(self._dimension)
+        self._L = Board._compute_L(self._dimension)
+        self._basis = Board._compute_basis(self._dimension)
 
-    def __getitem__(self, indices):
-        return self.slice(indices)
-
-    def _compute_cardinals(self) -> Tuple[_Position]:
+    @staticmethod
+    def _compute_cardinals(dimension: int) -> Tuple[_Position]:
+        # noinspection PyTypeChecker
         return tuple(
-            tuple(j if k == i else 0 for k in range(self.dimension))
+            tuple(j if k == i else 0 for k in range(dimension))
             for j in (-1, 1)
-            for i in range(self.dimension)
+            for i in range(dimension)
         )
 
-    def _compute_diagonals(self) -> Tuple[_Position]:
+    @staticmethod
+    def _compute_diagonals(dimension: int) -> Tuple[_Position]:
         from itertools import product
         # noinspection PyTypeChecker
         return tuple(
-            tuple((1, -1)[k] for k in J) if i == self.dimension
-            else tuple((-1, 1)[k] for k in J) + (0,) * (self.dimension - i)
-            for i in range(2, self.dimension + 1)
-            for J in product(range(2), repeat=i)
+            tuple((1, -1)[k] for k in j) + (0,) * (dimension - i)
+            for i in range(2, dimension + 1)
+            for j in product(range(2), repeat=i)
         )
 
-    def _compute_L(self) -> Tuple[_Position]:
+    @staticmethod
+    def _compute_L(dimension: int) -> Tuple[_Position]:
         from itertools import product
         # noinspection PyTypeChecker
         return tuple(
@@ -96,56 +97,57 @@ class Board:
                 2 * p if k == i
                 else q if k == j
                 else 0
-                for k in range(self.dimension)
+                for k in range(dimension)
             )
-            for i in range(self.dimension)
-            for j in range(self.dimension)
+            for i in range(dimension)
+            for j in range(dimension)
             for p, q in product((-1, 1), repeat=2)
             if i != j
         )
 
-    def _compute_basis(self) -> Tuple[_Position]:
+    @staticmethod
+    def _compute_basis(dimension: int) -> Tuple[_Position]:
         return tuple(
             tuple(
                 1 if i == j
                 else 0
-                for j in range(self.dimension)
+                for j in range(dimension)
             )
-            for i in range(self.dimension)
+            for i in range(dimension)
         )
 
-    @classmethod
-    def from_pieces(
-            cls,
-            size: int,
-            dimension: int,
-            pieces: Dict[_Position, Tuple[Color, _Piece]],
-            is_first_movement: Dict[_Position, bool] = None,
-            turn_number: int = 1,
-            turn_order: Tuple[_Color] = (Color.WHITE, Color.BLACK)
-    ):
-        if is_first_movement is None:
-            is_first_movement = {}
-        board = cls(size, dimension, turn_number, turn_order)
-        for position, (color, piece) in pieces.items():
-            board.add(piece, position, color, is_first_movement.get(position, True))
+    def copy(self) -> "Board":
+        board = Board(self.size, self.dimension,
+                      self.turn_number, self.turn_order)
+        board._pieces = self._pieces.copy()
+        board._is_first_movement = self._is_first_movement.copy()
+        return board
+
+    def assumption_movement(
+        self,
+        initial_position: _Position,
+        final_position: _Position,
+        use_turn: bool = False
+    ) -> "Board":
+        board = self.copy()
+        board.move(initial_position, final_position, use_turn, True)
         return board
 
     @property
-    def cardinals(self):
+    def cardinals(self) -> Tuple[_Position]:
         return self._cardinals
 
     @property
-    def diagonals(self):
+    def diagonals(self) -> Tuple[_Position]:
         return self._diagonals
 
     # noinspection PyPropertyDefinition
     @property
-    def L(self):
+    def L(self) -> Tuple[_Position]:
         return self._L
 
     @property
-    def basis(self):
+    def basis(self) -> Tuple[_Position]:
         return self._basis
 
     @property
@@ -169,9 +171,9 @@ class Board:
         return self._turn_order
 
     @property
-    def pieces(self) -> Iterator[Tuple[_Position, Color, _Piece]]:
+    def pieces(self) -> Iterator[Tuple[_Position, _Color, _Piece]]:
         for position, (color, piece) in self._pieces.items():
-            yield position, color, piece
+            yield position, _PieceValue(color, piece)
 
     def add(
             self,
@@ -206,7 +208,8 @@ class Board:
             self,
             initial_position: _Position,
             final_position: _Position,
-            use_turn: bool = True
+            use_turn: bool = True,
+            force: bool = False
     ):
         """Moves a piece from one position to another; handles captures."""
         assert self.contains(initial_position)
@@ -217,7 +220,9 @@ class Board:
             assert color is self.turn
             self.next_turn()
 
-        assert piece.valid_next(self, initial_position, final_position)
+        if not force:
+            assert final_position in piece.movements(self, initial_position)
+
         if self.contains(final_position):
             self.remove(final_position)
 
@@ -239,7 +244,7 @@ class Board:
             final_piece: _Piece,
             is_first_movement: bool = None
     ):
-        assert len(position) == self.dimension
+        assert self.contains(position)
         color, piece = self.get(position)
         self.remove(position)
         self.add(
@@ -256,6 +261,7 @@ class Board:
             final_piece: _Piece
     ):
         """Promotes a piece."""
+        assert self.contains(position)
         color, initial_piece = self.get(position)
         assert initial_piece.is_promotion_available(self, position)
         assert final_piece in initial_piece.promotions
@@ -264,60 +270,11 @@ class Board:
     def next_turn(self):
         self._turn_number += 1
 
-    def slice(
-            self,
-            indices: Tuple[Union[slice, int], ...]
-    ) -> "Board":
-        assert len(indices) == self.dimension
-        pieces = self._pieces.copy()
-        for i, j in enumerate(indices):
-            assert type(j) is slice or type(j) is int
-            outside = []
-            if type(j) is slice:
-                k = list(range(*j.indices(self.size)))
-                for position in pieces.keys():
-                    if position[i] not in k:
-                        outside.append(position)
-            else:
-                for position in pieces.keys():
-                    if position[i] != j:
-                        outside.append(position)
-            for p in outside:
-                del pieces[p]
-        return Board.from_pieces(
-            self.size,
-            self.dimension,
-            pieces,
-            turn_number=self.turn_number,
-            turn_order=self.turn_order
-        )
-
-    def select(
-            self,
-            selection: Tuple[bool, ...]
-    ) -> "Board":
-        board = Board(
-            self.size,
-            sum(1 for i in selection if i),
-            turn_number=self.turn_number,
-            turn_order=self.turn_order
-        )
-        for position, color, piece in self.pieces:
-            new_position = tuple(j for i, j in enumerate(position) if selection[i])
-            if board.contains(new_position):
-                raise SelectionOverlapping(position, new_position, self.dimension, sum(1 for i in selection if i))
-            board.add(
-                piece,
-                new_position,
-                color,
-                self.is_first_movement(position)
-            )
-        return board
-
     def is_first_movement(
             self,
             position: _Position
     ) -> bool:
+        assert self.contains(position)
         return self._is_first_movement[position]
 
     def in_bounds(
@@ -326,20 +283,120 @@ class Board:
     ) -> bool:
         """Checks if a piece is inside the Board bounds."""
         if len(position) != self.dimension:
-            raise UnexpectedPosition(position, self.size, self.dimension)
+            raise InvalidPosition(position, self.size, self.dimension)
         return all(0 <= i < self.size for i in position)
 
-    def in_check(self):
-        raise NotImplementedError
+    def no_conflict(
+            self,
+            initial_position: _Position,
+            final_position: _Position
+    ):
+        """Checks if a given position doesn't cause a conflict."""
+        return (
+            self.in_bounds(final_position)
+            and (
+                not self.contains(final_position)
+                or self.get(initial_position).color != self.get(final_position).color
+            )
+        )
 
-    def in_checkmate(self):
-        raise NotImplementedError
+    def find(
+        self,
+        piece: _Piece = None,
+        color: _Color = None
+    ) -> Tuple[_Position]:
+        assert piece is not None or color is not None
+        matches = []
+        for current_position, (current_color, current_piece) in self.pieces:
+            if piece is not None and current_piece != piece:
+                continue
+            if color is not None and current_color is not color:
+                continue
+            matches.append(current_position)
+        return tuple(matches)
 
-    def in_stalemate(self):
-        raise NotImplementedError
+    def in_check(self, color: _Color, position: _Position = None) -> bool:
+        king_positions = self.find(
+            King, color) if position is None else [position]
 
-    def slice_in_place(self):
-        raise NotImplementedError
+        attacking_colors = set(self.turn_order) - {color}
+        attacking_positions = []
+        for attacking_color in attacking_colors:
+            attacking_positions.extend(self.find(color=attacking_color))
 
-    def select_in_place(self):
-        raise NotImplementedError
+        for attacking_position in attacking_positions:
+            attacking_color, attacking_piece = self.get(attacking_position)
+            for king_position in king_positions:
+                if king_position in attacking_piece.movements(self, attacking_position):
+                    return True
+        return False
+
+    def in_checkmate(self, color: _Color, position: _Position = None) -> bool:
+        king_positions = self.find(
+            King, color) if position is None else [position]
+
+        defending_colors = {color}
+        defending_positions = []
+        for defending_color in defending_colors:
+            defending_positions.extend(self.find(color=defending_color))
+
+        attacking_colors = set(self.turn_order) - {color}
+        attacking_positions = []
+        for attacking_color in attacking_colors:
+            attacking_positions.extend(self.find(color=attacking_color))
+
+        for king_position in king_positions:
+            in_check = self.in_check(color, king_position)
+            in_stalemate = all(
+                self.assumption_movement(king_position, unfiltered_movement).in_check(
+                    color, unfiltered_movement)
+                for unfiltered_movement in King._unfiltered_movements(self, king_position)
+            )
+            has_defense = None
+            for defending_position in defending_positions:
+                defending_color, defending_piece = self.get(defending_position)
+                if defending_piece == King:
+                    continue
+                has_defense = any(
+                    not self.assumption_movement(
+                        defending_position, unfiltered_movement).in_check(color, king_position)
+                    for unfiltered_movement in defending_piece._unfiltered_movements(self, defending_position)
+                )
+            if in_check and in_stalemate and not has_defense:
+                return True
+        return False
+
+    def in_stalemate(self, color: _Color, position: _Position = None) -> bool:
+        king_positions = self.find(
+            King, color) if position is None else [position]
+
+        defending_colors = {color}
+        defending_positions = []
+        for defending_color in defending_colors:
+            defending_positions.extend(self.find(color=defending_color))
+
+        attacking_colors = set(self.turn_order) - {color}
+        attacking_positions = []
+        for attacking_color in attacking_colors:
+            attacking_positions.extend(self.find(color=attacking_color))
+
+        for king_position in king_positions:
+            in_check = self.in_check(color, king_position)
+            in_stalemate = all(
+                self.assumption_movement(king_position, unfiltered_movement).in_check(
+                    color, unfiltered_movement)
+                for unfiltered_movement in King._unfiltered_movements(self, king_position)
+            )
+            has_defense = None
+            for defending_position in defending_positions:
+                defending_color, defending_piece = self.get(defending_position)
+                if defending_piece == King:
+                    continue
+                has_defense = any(
+                    not self.assumption_movement(
+                        defending_position, unfiltered_movement).in_check(color, king_position)
+                    for unfiltered_movement in defending_piece._unfiltered_movements(self, defending_position)
+                )
+            if in_stalemate and not in_check and not has_defense:
+                return True
+        return False

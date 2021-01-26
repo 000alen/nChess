@@ -1,25 +1,16 @@
+from Chess.Piece.King import King
+from Chess.Piece.Queen import Queen
 from Chess.Board import Board, Color
 from Chess.Piece.Pawn import Pawn
 from Chess.Utility import print_2d_board
 
-board = Board(4, 3)
-board.add(Pawn, (0, 0, 0), Color.WHITE)
-board.add(Pawn, (1, 0, 1), Color.WHITE)
-board.add(Pawn, (2, 0, 2), Color.WHITE)
-board.add(Pawn, (3, 0, 3), Color.WHITE)
+board = Board(4, 2)
+board.add(Queen, (2, 0), Color.WHITE)
+board.add(Queen, (3, 0), Color.WHITE)
+board.add(King, (3, 3), Color.BLACK)
 
-board.add(Pawn, (0, 3, 0), Color.BLACK)
-board.add(Pawn, (1, 3, 1), Color.BLACK)
-board.add(Pawn, (2, 3, 2), Color.BLACK)
-board.add(Pawn, (3, 3, 3), Color.BLACK)
-
-
-print_2d_board(
-    board.select((True, True, False))
-)
-
-print()
-
-print_2d_board(
-    board.select((False, True, True))
-)
+print_2d_board(board)
+print(f"in check: {board.in_check(Color.BLACK)}")
+print(f"in checkmate: {board.in_checkmate(Color.BLACK)}")
+print(f"in stalemate: {board.in_stalemate(Color.BLACK)}")
+print(f"movements for Black King: {King.movements(board, (3, 3))}")
