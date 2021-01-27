@@ -30,15 +30,32 @@ class Pawn(Piece):
         position: _Position,
         capture_axis: int = 0
     ):
-        movement_offsets = board.basis[:capture_axis] + board.basis[capture_axis + 1:]
-        movements = Pawn.ad_nauseam(board, position, movement_offsets, 2 if board.is_first_movement(position) else 1)
-
-        capture_offset = board.basis[capture_axis]
-        captures = []
-        for movement in movements:
-            for i in (-1, 1):
-                partial_capture = tuple(movement[j] + i * capture_offset[j] for j in range(board.dimension))
-                if board.no_conflict(position, partial_capture) and board.contains(partial_capture):
-                    captures.append(partial_capture)
+        from Chess.Board import Color
+        k = 1 if board.get(position).color is Color.WHITE else -1
+        offsets = board.basis[:capture_axis] + board.basis[capture_axis + 1:]
         
-        return movements + captures
+        movements = []
+        for offset in offsets:
+            unfiltered_movement = tuple(position[i] + k * offset[i] for i in range(board.dimension))
+            if board.in_bounds(unfiltered_movement) and  not board.contains(unfiltered_movement):
+                movements.append(unfiltered_movement)
+
+        first_movements = []
+        if board.is_first_movement(position):
+            for offset in offsets:
+                unfiltered_movement = tuple(position[i] + 2 * k * offset[i] for i in range(board.dimension))
+                if board.in_bounds(unfiltered_movement) and not board.contains(unfiltered_movement):
+                    first_movements.append(unfiltered_movement)
+
+        capture_offsets = [
+            board.basis[capture_axis],
+            tuple(-1 * board.basis[capture_axis][i] for i in range(board.dimension))
+        ]
+        capture_movements = []
+        for movement in movements:
+            for offset in capture_offsets:
+                unfiltered_capture = tuple(movement[i] + offset[i] for i in range(board.dimension))
+                if board.no_conflict(position, unfiltered_capture) and board.contains(unfiltered_capture):
+                    capture_movements.append(unfiltered_capture)
+        
+        return movements + first_movements + capture_movements

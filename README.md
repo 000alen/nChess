@@ -163,6 +163,7 @@ RookOffsets = [
 
 - [ ] Castling.
 - [ ] Add event listeners.
+- [ ] Pawn en passant.
 - [x] Check.
 - [x] Checkmate
 - [x] Stalemate.
