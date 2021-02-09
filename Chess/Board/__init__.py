@@ -123,7 +123,7 @@ class Board:
         board._is_first_movement = self._is_first_movement.copy()
         return board
 
-    def assumption_movement(
+    def simulated_move(
         self,
         initial_position: _Position,
         final_position: _Position,
@@ -315,21 +315,27 @@ class Board:
             matches.append(current_position)
         return tuple(matches)
 
-    def in_check(self, color: _Color, position: _Position = None) -> bool:
-        king_positions = self.find(
-            King, color) if position is None else [position]
+    def is_under_attack(self, position: _Position) -> bool:
+        color, piece = self.get(position)
 
         attacking_colors = set(self.turn_order) - {color}
         attacking_positions = []
         for attacking_color in attacking_colors:
             attacking_positions.extend(self.find(color=attacking_color))
 
-        for attacking_position in attacking_positions:
-            attacking_color, attacking_piece = self.get(attacking_position)
-            for king_position in king_positions:
-                if king_position in attacking_piece.movements(self, attacking_position):
-                    return True
-        return False
+        return any(
+            position in self.get(attacking_position).piece.movements(self, attacking_position)
+            for attacking_position in attacking_positions
+        )
+
+    def in_check(self, color: _Color, position: _Position = None) -> bool:
+        king_positions = self.find(
+            King, color) if position is None else [position]
+
+        return any(
+            self.is_under_attack(king_position)
+            for king_position in king_positions
+        )
 
     def in_checkmate(self, color: _Color, position: _Position = None) -> bool:
         king_positions = self.find(
@@ -348,7 +354,7 @@ class Board:
         for king_position in king_positions:
             in_check = self.in_check(color, king_position)
             in_stalemate = all(
-                self.assumption_movement(king_position, unfiltered_movement).in_check(
+                self.simulated_move(king_position, unfiltered_movement).in_check(
                     color, unfiltered_movement)
                 for unfiltered_movement in King._unfiltered_movements(self, king_position)
             )
@@ -358,7 +364,7 @@ class Board:
                 if defending_piece == King:
                     continue
                 has_defense = any(
-                    not self.assumption_movement(
+                    not self.simulated_move(
                         defending_position, unfiltered_movement).in_check(color, king_position)
                     for unfiltered_movement in defending_piece._unfiltered_movements(self, defending_position)
                 )
@@ -383,7 +389,7 @@ class Board:
         for king_position in king_positions:
             in_check = self.in_check(color, king_position)
             in_stalemate = all(
-                self.assumption_movement(king_position, unfiltered_movement).in_check(
+                self.simulated_move(king_position, unfiltered_movement).in_check(
                     color, unfiltered_movement)
                 for unfiltered_movement in King._unfiltered_movements(self, king_position)
             )
@@ -393,7 +399,7 @@ class Board:
                 if defending_piece == King:
                     continue
                 has_defense = any(
-                    not self.assumption_movement(
+                    not self.simulated_move(
                         defending_position, unfiltered_movement).in_check(color, king_position)
                     for unfiltered_movement in defending_piece._unfiltered_movements(self, defending_position)
                 )
