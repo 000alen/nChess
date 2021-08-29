@@ -1,3 +1,5 @@
+from nChess.utils import PNG, WhiteQueen, BlackQueen
+
 from kivy.core.window import Window
 from kivy.app import App
 from kivy.uix.gridlayout import GridLayout
@@ -10,21 +12,6 @@ Window.size = (600, 600)
 WHITE = (0.9, 0.9, 0.9, 1)
 BLACK = (0.3, 0.3, 0.3, 1)
 HIGHLIGHT = (0.9, 0.9, 0, 1)
-
-PIECES = {
-    "P": "chess-pieces/WhitePawn.png",
-    "R": "chess-pieces/WhiteRook.png",
-    "N": "chess-pieces/WhiteKnight.png",
-    "B": "chess-pieces/WhiteBishop.png",
-    "Q": "chess-pieces/WhiteQueen.png",
-    "K": "chess-pieces/WhiteKing.png",
-    "p": "chess-pieces/BlackPawn.png",
-    "r": "chess-pieces/BlackRook.png",
-    "n": "chess-pieces/BlackKnight.png",
-    "b": "chess-pieces/BlackBishop.png",
-    "q": "chess-pieces/BlackQueen.png",
-    "k": "chess-pieces/BlackKing.png",
-}
 
 
 class Piece(Image):
@@ -316,8 +303,8 @@ class ChessApp(App):
     def build(self):
         self.n_board = nBoard(self.board_dimension, self.board_size)
         
-        self.n_board.set_piece(Piece(source=PIECES["Q"]), (0, 0, 0, 0))
-        self.n_board.set_piece(Piece(source=PIECES["q"]), (3, 3, 3, 3))
+        self.n_board.set_piece(Piece(source=PNG[WhiteQueen]), (0, 0, 0, 0))
+        self.n_board.set_piece(Piece(source=PNG[BlackQueen]), (3, 3, 3, 3))
 
         return self.n_board
 
