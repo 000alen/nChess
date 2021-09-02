@@ -1,5 +1,5 @@
 from nChess.Piece import Piece
-from nChess.Board import Board, Color
+from nChess.nBoard import nBoard, Color
 from nChess.Piece.Bishop import Bishop
 from nChess.Piece.King import King
 from nChess.Piece.Knight import Knight
@@ -50,6 +50,6 @@ Pieces = [
 ]
 
 
-class Classic(Board):
+class Classic(nBoard):
     def __init__(self):
         super().__init__(2, (8, 8), 0, TurnOrder, deepcopy(Pieces))

@@ -1,5 +1,5 @@
-from nChess.Board import *
-from nChess.Board.Classic import *
+from nChess.nBoard import *
+from nChess.nBoard.Classic import *
 from nChess.Piece import *
 from nChess.Piece.Bishop import *
 from nChess.Piece.King import *
@@ -20,7 +20,7 @@ def print_2d_board(board: Classic):
 # board.move(Move((0, 1), (0, 2)))
 
 
-board = Board(2, (4, 4))
+board = nBoard(2, (4, 4))
 board.add(Queen, (0, 0), ClassicColor.white)
 board.add(Pawn, (3, 3), ClassicColor.black)
 

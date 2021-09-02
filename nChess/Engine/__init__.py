@@ -1,5 +1,5 @@
-from nChess.Board import Board, Color
-from nChess.Board.Classic import Classic, ClassicColor
+from nChess.nBoard import nBoard, Color
+from nChess.nBoard.Classic import Classic, ClassicColor
 from nChess.Piece import PieceData
 from nChess.Piece.Bishop import Bishop
 from nChess.Piece.King import King
@@ -9,7 +9,7 @@ from nChess.Piece.Queen import Queen
 from nChess.Piece.Rook import Rook
 
 
-def doubled_pawns(board: Board, color: Color) -> int:
+def doubled_pawns(board: nBoard, color: Color) -> int:
     x = 0
     for i, i_position in enumerate(board.find(PieceData(color, Pawn))):
         for j, j_position in enumerate(board.find(PieceData(color, Pawn))):
@@ -19,7 +19,7 @@ def doubled_pawns(board: Board, color: Color) -> int:
     return x
 
 
-def blocked_pawns(board: Board, color: Color) -> int:
+def blocked_pawns(board: nBoard, color: Color) -> int:
     x = 0
     for position in board.find(PieceData(color, Pawn)):
         for j in range(1, board.dimension):
@@ -29,7 +29,7 @@ def blocked_pawns(board: Board, color: Color) -> int:
     return x
 
 
-def isolated_pawns(board: Board, color: Color) -> int:
+def isolated_pawns(board: nBoard, color: Color) -> int:
     x = 0
     for i, i_position in enumerate(board.find(PieceData(color, Pawn))):
         for j, j_position in enumerate(board.find(PieceData(color, Pawn))):
@@ -38,7 +38,7 @@ def isolated_pawns(board: Board, color: Color) -> int:
             x += 1 if j_position[0] != i_position[0] + 1 or j_position[0] != i_position[0] - 1  else 0
     return x
 
-def delta_material(board: Board, piece_type, color: Color, rival_color: Color) -> int:
+def delta_material(board: nBoard, piece_type, color: Color, rival_color: Color) -> int:
     return len(board.find(PieceData(color, piece_type))) - len(board.find(PieceData(rival_color, piece_type)))
 
 

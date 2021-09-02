@@ -5,7 +5,7 @@ IntegerVector = tuple[int, ...]
 Color = TypeVar("Color")
 
 
-class Board:
+class nBoard:
     dimension: int
     size: IntegerVector
     pieces: list["Piece"]
@@ -89,8 +89,8 @@ class Board:
             for i in range(dimension)
         )
 
-    def copy(self) -> "Board":
-        return Board(
+    def copy(self) -> "nBoard":
+        return nBoard(
             self.dimension,
             self.size,
             self.turn_number,
@@ -163,7 +163,7 @@ class Board:
             )
         )
 
-    def assume_move(self, move: "Move", force: bool = False) -> "Board":
+    def assume_move(self, move: "Move", force: bool = False) -> "nBoard":
         new_board = self.copy()
 
         assert new_board.contains(move.initial_position)

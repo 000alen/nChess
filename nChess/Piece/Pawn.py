@@ -1,6 +1,6 @@
 from typing import Type
 
-from nChess.Board import Board, Move
+from nChess.nBoard import nBoard, Move
 from nChess.Piece import Piece
 from nChess.Piece.Bishop import Bishop
 from nChess.Piece.Knight import Knight
@@ -18,14 +18,14 @@ class Pawn(Piece):
         self.capture_axis = capture_axis
 
     def is_promotable(self) -> bool:
-        from nChess.Board.Classic import ClassicColor
+        from nChess.nBoard.Classic import ClassicColor
         return all(
             i == (self.board.size[i] - 1 if self.board.get(self.position).color == ClassicColor.white else 0)
             for i in self.position[1::]
         )
 
     def all_moves(self) -> tuple["Move", ...]:
-        from nChess.Board.Classic import ClassicColor
+        from nChess.nBoard.Classic import ClassicColor
         k = 1 if self.color is ClassicColor.white else -1
         offsets = self.board.basis[:self.capture_axis] + self.board.basis[self.capture_axis + 1:]
         

@@ -81,4 +81,4 @@ class Piece(ABC):
 
 
 # XXX
-from nChess.Board import Board, IntegerVector, Color
+from nChess.nBoard import nBoard, IntegerVector, Color

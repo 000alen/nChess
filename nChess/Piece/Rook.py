@@ -1,5 +1,5 @@
 
-from nChess.Board import Board, IntegerVector, Move
+from nChess.nBoard import nBoard, IntegerVector, Move
 from nChess.Piece import Piece
 
 

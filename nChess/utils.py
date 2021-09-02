@@ -1,4 +1,4 @@
-from nChess.Board.Classic import Classic, ClassicColor
+from nChess.nBoard.Classic import Classic, ClassicColor
 from nChess.Piece import Piece
 from nChess.Piece.Bishop import Bishop
 from nChess.Piece.King import King
