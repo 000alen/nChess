@@ -325,26 +325,28 @@ class nBoardWidget(GridLayout):
     def handle_touch(self, board, i, j):
         position = self.reconstruct_position(board, i, j)
 
-        if self.selected_position is not None:
-            if position == self.selected_position:
-                self.unselect_piece(self.selected_position)
-                self.selected_position = None
-            elif (move := Move(self.selected_position, position)) in self.n_board.get(self.selected_position).moves():
-                self.unselect_piece(self.selected_position)
-                self.selected_position = None
-                self.move_piece(move.initial_position, move.final_position)
-                self.n_board.move(move, force=True)
-            elif self.has_piece(position):
-                self.unselect_piece(self.selected_position)
-                self.select_piece(position)
-                self.selected_position = position
-            else:
-                self.unselect_piece(self.selected_position)
-                self.selected_position = None
-        else:
-            if self.has_piece(position):
-                self.select_piece(position)
-                self.selected_position = position
+        raise NotImplementedError
+
+        # if self.selected_position is not None:
+        #     if position == self.selected_position:
+        #         self.unselect_piece(self.selected_position)
+        #         self.selected_position = None
+        #     elif (move := Move(self.selected_position, position)) in self.n_board.get(self.selected_position).moves():
+        #         self.unselect_piece(self.selected_position)
+        #         self.selected_position = None
+        #         self.move_piece(move.initial_position, move.final_position)
+        #         self.n_board.move(move, force=True)
+        #     elif self.has_piece(position):
+        #         self.unselect_piece(self.selected_position)
+        #         self.select_piece(position)
+        #         self.selected_position = position
+        #     else:
+        #         self.unselect_piece(self.selected_position)
+        #         self.selected_position = None
+        # else:
+        #     if self.has_piece(position):
+        #         self.select_piece(position)
+        #         self.selected_position = position
 
 
 class nChessApp(App):
