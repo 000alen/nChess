@@ -1,5 +1,7 @@
 # n-dimensional chess
 
+![4d board](./assets/nBoard.png)
+
 This is a work-in-progress implementation of a n-dimensional Chess framework.
 
 # Rules

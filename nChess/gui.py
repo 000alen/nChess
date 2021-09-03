@@ -325,28 +325,28 @@ class nBoardWidget(GridLayout):
     def handle_touch(self, board, i, j):
         position = self.reconstruct_position(board, i, j)
 
-        raise NotImplementedError
+        # raise NotImplementedError
 
-        # if self.selected_position is not None:
-        #     if position == self.selected_position:
-        #         self.unselect_piece(self.selected_position)
-        #         self.selected_position = None
-        #     elif (move := Move(self.selected_position, position)) in self.n_board.get(self.selected_position).moves():
-        #         self.unselect_piece(self.selected_position)
-        #         self.selected_position = None
-        #         self.move_piece(move.initial_position, move.final_position)
-        #         self.n_board.move(move, force=True)
-        #     elif self.has_piece(position):
-        #         self.unselect_piece(self.selected_position)
-        #         self.select_piece(position)
-        #         self.selected_position = position
-        #     else:
-        #         self.unselect_piece(self.selected_position)
-        #         self.selected_position = None
-        # else:
-        #     if self.has_piece(position):
-        #         self.select_piece(position)
-        #         self.selected_position = position
+        if self.selected_position is not None:
+            if position == self.selected_position:
+                self.unselect_piece(self.selected_position)
+                self.selected_position = None
+            elif (move := Move(self.selected_position, position)) in self.n_board.get(self.selected_position).moves():
+                self.unselect_piece(self.selected_position)
+                self.selected_position = None
+                self.move_piece(move.initial_position, move.final_position)
+                self.n_board.move(move, force=True)
+            elif self.has_piece(position):
+                self.unselect_piece(self.selected_position)
+                self.select_piece(position)
+                self.selected_position = position
+            else:
+                self.unselect_piece(self.selected_position)
+                self.selected_position = None
+        else:
+            if self.has_piece(position):
+                self.select_piece(position)
+                self.selected_position = position
 
 
 class nChessApp(App):
@@ -393,3 +393,8 @@ if __name__ == "__main__":
 
     n_chess_app = nChessApp(n_board=n_board)
     n_chess_app.run()
+
+    import time
+    time.sleep(5)
+
+    n_chess_app.n_board_widget.export_as_image().save("out.png")
