@@ -126,7 +126,7 @@ class nBoard:
 
     def remove(self, position: IntegerVector):
         assert self.contains(position)
-        self.pieces.pop(self.get(position))
+        self.pieces.pop(self.pieces.index(self.get(position)))
 
     def move(self, move: "Move", force: bool = False):
         assert self.contains(move.initial_position)
