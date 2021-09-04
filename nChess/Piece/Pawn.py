@@ -13,19 +13,19 @@ class Pawn(Piece):
 
     promotions: tuple[Type["Piece"]] = (Bishop, Knight, Queen, Rook)
 
-    def __init__(self, position, color, has_moved=False, board=None, capture_axis=1) -> None:
+    def __init__(self, position, color, has_moved=False, board=None, capture_axis=0) -> None:
         super().__init__(position, color, has_moved, board)
         self.capture_axis = capture_axis
 
     def is_promotable(self) -> bool:
-        from nChess.nBoard.Classic import ClassicColor
+        from nChess.nBoard.Board import ClassicColor
         return all(
             i == (self.board.size[i] - 1 if self.board.get(self.position).color == ClassicColor.white else 0)
             for i in self.position[1::]
         )
 
     def all_moves(self) -> tuple["Move", ...]:
-        from nChess.nBoard.Classic import ClassicColor
+        from nChess.nBoard.Board import ClassicColor
         k = 1 if self.color is ClassicColor.white else -1
         offsets = self.board.basis[:self.capture_axis] + self.board.basis[self.capture_axis + 1:]
         

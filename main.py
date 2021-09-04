@@ -1,5 +1,5 @@
 from nChess.nBoard import *
-from nChess.nBoard.Classic import *
+from nChess.nBoard.Board import *
 from nChess.Piece import *
 from nChess.Piece.Bishop import *
 from nChess.Piece.King import *
@@ -10,13 +10,13 @@ from nChess.Piece.Rook import *
 from nChess.Engine import *
 from nChess.utils import *
 
-def print_2d_board(board: Classic):
+def print_2d_board(board: Board):
     for i in range(board.size[0]):
         for j in range(board.size[1]):
             if board.contains((i, j)):
                 print(to_char(board.get((i, j))))
 
-# board = Classic()
+# board = Board()
 # board.move(Move((0, 1), (0, 2)))
 
 

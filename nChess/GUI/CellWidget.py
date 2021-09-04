@@ -10,7 +10,7 @@ HIGHLIGHT = (0.9, 0.9, 0, 1)
 
 
 class CellWidget(GridLayout):
-    color: Color
+    color: "Color"
     piece_widget: PieceWidget
     highlighted: bool
 
@@ -23,7 +23,7 @@ class CellWidget(GridLayout):
         self.piece_widget = None
         self.highlighted = False
 
-        self.draw_cell()
+        self.draw_color()
 
         self.bind(pos=self.update_cell)
         self.bind(size=self.update_cell)
@@ -36,20 +36,22 @@ class CellWidget(GridLayout):
 
     def toggle_highlight(self):
         if self.highlighted:
-            self.draw_cell()
+            self.draw_color()
         else:
-            with self.canvas.before:
-                Color(*HIGHLIGHT)
-                self.background = Rectangle(
-                    pos=(self.x, self.y),
-                    size=(self.width, self.height)
-                )
-
+            self.draw_highlight()
         self.highlighted = not self.highlighted
 
-    def draw_cell(self):
+    def draw_color(self):
         with self.canvas.before:
             Color(*self.color)
+            self.background = Rectangle(
+                pos=(self.x, self.y),
+                size=(self.width, self.height)
+            )
+
+    def draw_highlight(self):
+        with self.canvas.before:
+            Color(*HIGHLIGHT)
             self.background = Rectangle(
                 pos=(self.x, self.y),
                 size=(self.width, self.height)
@@ -62,8 +64,8 @@ class CellWidget(GridLayout):
     def has_piece_widget(self):
         return self.piece_widget is not None
 
-    def set_piece_widget(self, piece):
-        self.piece_widget = piece
+    def set_piece_widget(self, piece_widget):
+        self.piece_widget = piece_widget
         self.add_widget(self.piece_widget, index=0)
 
     def get_piece_widget(self):
@@ -73,5 +75,5 @@ class CellWidget(GridLayout):
         self.remove_widget(self.piece_widget)
         self.piece_widget = None
 
-    def handle_touch(self, piece_instance):
+    def handle_touch(self, piece_widget):
         self.parent.handle_touch(self)

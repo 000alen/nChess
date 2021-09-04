@@ -50,6 +50,6 @@ Pieces = [
 ]
 
 
-class Classic(nBoard):
+class Board(nBoard):
     def __init__(self):
         super().__init__(2, (8, 8), 0, TurnOrder, deepcopy(Pieces))
