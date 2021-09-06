@@ -19,6 +19,11 @@ class PieceData:
 
 
 class Piece(ABC):
+    position: "IntegerVector"
+    color: "Color"
+    has_moved: bool
+    board: "nBoard"
+
     promotions: tuple[Type["Piece"]]
 
     def __init__(self, position, color, has_moved=False, board=None) -> None:

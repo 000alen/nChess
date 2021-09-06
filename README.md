@@ -163,12 +163,6 @@ RookOffsets = [
 
 # To do
 
+- [ ] Pawn en passant.
 - [ ] Castling.
 - [ ] Add event listeners.
-- [ ] Pawn en passant.
-- [x] Check.
-- [x] Checkmate
-- [x] Stalemate.
-- [x] Restrict King movement.
-- [x] Knight 'jump' mechanics.
-- [x] Pawn promotion.

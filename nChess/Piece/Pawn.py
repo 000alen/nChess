@@ -26,31 +26,28 @@ class Pawn(Piece):
 
     def all_moves(self) -> tuple["Move", ...]:
         from nChess.nBoard.Board import ClassicColor
-        k = 1 if self.color is ClassicColor.white else -1
-        offsets = self.board.basis[:self.capture_axis] + self.board.basis[self.capture_axis + 1:]
+
+        direction = 1 if self.color is ClassicColor.white else -1
         
         moves = []
-        for offset in offsets:
-            unfiltered_move = Move(self.position, tuple(self.position[i] + k * offset[i] for i in range(self.board.dimension)))
+        for i, base in enumerate(self.board.basis):
+            if i == self.capture_axis:
+                continue
+            unfiltered_move = Move(self.position, tuple(self.position[i] + base[i] * direction for i in range(self.board.dimension)))
             if self.board.in_bounds(unfiltered_move.final_position) and not self.board.contains(unfiltered_move.final_position):
                 moves.append(unfiltered_move)
-
-        first_moves = []
-        if self.has_moved:
-            for offset in offsets:
-                unfiltered_move = Move(self.position, tuple(self.position[i] + 2 * k * offset[i] for i in range(self.board.dimension))) 
+                unfiltered_move = Move(self.position, tuple(self.position[i] + base[i] * direction * 2 for i in range(self.board.dimension)))
                 if self.board.in_bounds(unfiltered_move.final_position) and not self.board.contains(unfiltered_move.final_position):
-                    first_moves.append(unfiltered_move)
+                    moves.append(unfiltered_move)
 
-        capture_offsets = [
-            self.board.basis[self.capture_axis],
-            tuple(-1 * self.board.basis[self.capture_axis][i] for i in range(self.board.dimension))
-        ]
         capture_moves = []
-        for move in moves:
-            for capture_offset in capture_offsets:
-                unfiltered_capture = Move(self.position, tuple(move.final_position[i] + capture_offset[i] for i in range(self.board.dimension)))
-                if not self.board.move_in_conflict(unfiltered_capture) and self.board.contains(unfiltered_capture.final_position):
-                    capture_moves.append(unfiltered_capture)
-        
-        return tuple(moves + first_moves + capture_moves)
+        for i in (-1, 1):
+            for base in self.board.basis:
+                unfiltered_move = Move(self.position, tuple(
+                    self.position[j] + base[j] * direction + i * self.board.basis[self.capture_axis][j] for j in range(self.board.dimension)
+                    )
+                )
+                if not self.board.move_in_conflict(unfiltered_move) and self.board.contains(unfiltered_move.final_position):
+                    capture_moves.append(unfiltered_move)
+
+        return tuple(moves + capture_moves)
