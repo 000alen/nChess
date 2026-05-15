@@ -73,13 +73,15 @@ class nBoardWidget(GridLayout):
         self.get_board_widget(position).remove_piece_widget(position[:2])
 
     def move_piece_widget(self, move: Move):
-        source = self.get_piece_widget(move.initial_position).source
         self.remove_piece_widget(move.initial_position)
         
         if self.has_piece_widget(move.final_position):
             self.remove_piece_widget(move.final_position)
 
-        self.set_piece_widget(PieceWidget(source=source), move.final_position)
+        self.set_piece_widget(
+            PieceWidget(source=to_PNG(self.n_board.get(move.final_position))),
+            move.final_position,
+        )
 
     def get_cell(self, position: IntegerVector) -> CellWidget:
         position = self.position_padding(position)
@@ -132,8 +134,8 @@ class nBoardWidget(GridLayout):
             elif (move := Move(self.selected_position, position)) in self.n_board.get(self.selected_position).moves():
                 self.unselect_piece(self.selected_position)
                 self.selected_position = None
-                self.move_piece_widget(move)
                 self.n_board.move(move, force=self.n_board.current_turn() is None)
+                self.move_piece_widget(move)
             elif self.has_piece_widget(position) and self.can_select_piece(position):
                 self.unselect_piece(self.selected_position)
                 self.select_piece(position)

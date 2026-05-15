@@ -1,12 +1,14 @@
 import unittest
 from pathlib import Path
 
-from nChess.Engine import classic_evaluate
+from nChess.Engine import classic_evaluate, doubled_pawns
 from nChess.nBoard import nBoard
 from nChess.nBoard.Board import Board, ClassicColor
 from nChess.Piece import Move, PieceData
 from nChess.Piece.King import King
+from nChess.Piece.Knight import Knight
 from nChess.Piece.Pawn import Pawn
+from nChess.Piece.Queen import Queen
 from nChess.Piece.Rook import Rook
 from nChess.utils import to_PNG
 
@@ -57,6 +59,29 @@ class BoardRuleTests(unittest.TestCase):
 
         self.assertTrue(board.get((0, 7)).is_promotable())
 
+    def test_pawn_promotes_to_queen_on_move(self):
+        board = nBoard(2, (8, 8), turn_order=(ClassicColor.white, ClassicColor.black))
+        board.add(King, (7, 7), ClassicColor.white)
+        board.add(King, (7, 0), ClassicColor.black)
+        board.add(Pawn, (0, 6), ClassicColor.white)
+
+        board.move(Move((0, 6), (0, 7)))
+
+        self.assertIs(type(board.get((0, 7))), Queen)
+        self.assertTrue(board.get((0, 7)).has_moved)
+
+    def test_knight_leaps_over_intervening_pieces(self):
+        board = nBoard(2, (8, 8), turn_order=(ClassicColor.white, ClassicColor.black))
+        board.add(King, (7, 7), ClassicColor.white)
+        board.add(King, (7, 0), ClassicColor.black)
+        board.add(Knight, (3, 3), ClassicColor.white)
+        for position in ((4, 3), (4, 4), (5, 3)):
+            board.add(Pawn, position, ClassicColor.white)
+
+        knight_moves = {move.final_position for move in board.get((3, 3)).moves()}
+
+        self.assertIn((5, 4), knight_moves)
+
     def test_diagonals_include_all_axis_combinations(self):
         diagonals = nBoard.compute_diagonals(3)
 
@@ -67,6 +92,14 @@ class BoardRuleTests(unittest.TestCase):
 class IntegrationSmokeTests(unittest.TestCase):
     def test_engine_evaluates_classic_board(self):
         self.assertEqual(classic_evaluate(Board(), ClassicColor.white), 0)
+
+    def test_doubled_pawns_count_extra_pawns_on_same_file(self):
+        board = nBoard(2, (8, 8), turn_order=(ClassicColor.white, ClassicColor.black))
+        board.add(Pawn, (0, 1), ClassicColor.white)
+        board.add(Pawn, (0, 3), ClassicColor.white)
+        board.add(Pawn, (2, 1), ClassicColor.white)
+
+        self.assertEqual(doubled_pawns(board, ClassicColor.white), 1)
 
     def test_piece_png_path_points_to_tracked_asset(self):
         board = Board()

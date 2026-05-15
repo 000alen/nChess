@@ -84,6 +84,7 @@ class BoardWidget(GridLayout):
             for j in range(self.board_columns):
                 if self.cells_widgets[i][j] == cell_widget:
                     return (j, i)
+        raise ValueError("cell widget does not belong to this board")
 
     def toggle_cell_widget_highlight(self, position: IntegerVector):
         self.get_cell_widget(position).toggle_highlight()

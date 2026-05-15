@@ -133,6 +133,26 @@ class nBoard:
         assert self.contains(position)
         self.pieces.pop(self.pieces.index(self.get(position)))
 
+    def promote_if_available(self, position: IntegerVector):
+        piece = self.get(position)
+        if not piece.is_promotable():
+            return
+
+        promotion_type = next(
+            (
+                candidate
+                for candidate in piece.promotions
+                if candidate.__name__ == "Queen"
+            ),
+            piece.promotions[0],
+        )
+        self.pieces[self.pieces.index(piece)] = promotion_type(
+            piece.position,
+            piece.color,
+            has_moved=True,
+            board=self,
+        )
+
     def move(self, move: "Move", force: bool = False):
         assert self.contains(move.initial_position)
         assert not self.move_in_conflict(move, force=force)
@@ -144,8 +164,9 @@ class nBoard:
             self.remove(move.final_position)
 
         self.get(move.initial_position).move(move)
+        self.promote_if_available(move.final_position)
 
-    def find(self, piece_data: "PieceData") -> tuple[IntegerVector]:
+    def find(self, piece_data: "PieceData") -> tuple[IntegerVector, ...]:
         return tuple(
             piece.position
             for piece in self.pieces
@@ -188,6 +209,7 @@ class nBoard:
             new_board.remove(move.final_position)
 
         new_board.get(move.initial_position).move(move)
+        new_board.promote_if_available(move.final_position)
         
         return new_board
 
@@ -195,7 +217,7 @@ class nBoard:
         kings_positions = tuple(
             piece.position
             for piece in self.pieces
-            if piece.color == color and type(piece).__name__ == "King"
+            if piece.color == color and type(piece) is King
         )
 
         for piece in self.pieces:
@@ -234,3 +256,4 @@ class nBoard:
 
 # Imported after nBoard is defined because Piece imports nBoard for shared types.
 from nChess.Piece import Piece, Move, PieceData
+from nChess.Piece.King import King

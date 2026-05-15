@@ -18,13 +18,10 @@ def pawns(board: nBoard, color: Color) -> tuple[Pawn, ...]:
 
 
 def doubled_pawns(board: nBoard, color: Color) -> int:
-    x = 0
-    for i, i_position in enumerate(board.find(PieceData(color, Pawn))):
-        for j, j_position in enumerate(board.find(PieceData(color, Pawn))):
-            if i == j:
-                continue
-            x += 1 if any(i_position[k] == j_position[k] for k in range(1, board.dimension)) else 0
-    return x
+    files = {}
+    for pawn in pawns(board, color):
+        files[pawn.position[pawn.capture_axis]] = files.get(pawn.position[pawn.capture_axis], 0) + 1
+    return sum(count - 1 for count in files.values() if count > 1)
 
 
 def blocked_pawns(board: nBoard, color: Color) -> int:
