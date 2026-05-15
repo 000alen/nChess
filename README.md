@@ -4,6 +4,28 @@
 
 This is a work-in-progress implementation of a n-dimensional Chess framework.
 
+# Web app
+
+The current UI is a Next.js App Router application. It ports the 4D demo board
+to a browser UI while keeping the Python implementation in the repository as a
+reference engine/model.
+
+Dependency installs use pnpm with a repository-level minimum release age policy
+(`minimum-release-age=10080`, seven days) in `.npmrc`.
+
+```bash
+pnpm install --frozen-lockfile
+pnpm dev
+```
+
+Useful checks:
+
+```bash
+pnpm typecheck
+pnpm build
+python3 -m unittest discover -s tests -v
+```
+
 # Rules
 
 ### Bishop
