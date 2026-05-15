@@ -1,7 +1,7 @@
 import unittest
 from pathlib import Path
 
-from nChess.Engine import classic_evaluate, doubled_pawns
+from nChess.Engine import best_move, classic_evaluate, doubled_pawns, find_best_move, legal_moves
 from nChess.GUI.geometry import (
     board_coordinates_for_indices,
     board_grid_size,
@@ -52,6 +52,16 @@ class BoardRuleTests(unittest.TestCase):
 
         self.assertIn((0, 1), rook_moves)
         self.assertNotIn((0, 2), rook_moves)
+
+    def test_legal_moves_do_not_capture_kings(self):
+        board = nBoard(2, (8, 8), turn_order=(ClassicColor.white, ClassicColor.black))
+        board.add(King, (7, 7), ClassicColor.white)
+        board.add(King, (7, 0), ClassicColor.black)
+        board.add(Rook, (0, 0), ClassicColor.white)
+
+        self.assertNotIn((7, 0), {move.final_position for move in board.get((0, 0)).moves()})
+        with self.assertRaises(AssertionError):
+            board.move(Move((0, 0), (7, 0)))
 
     def test_piece_move_marks_piece_as_moved_and_pawn_cannot_double_step_again(self):
         board = Board()
@@ -113,6 +123,40 @@ class IntegrationSmokeTests(unittest.TestCase):
         board = Board()
 
         self.assertTrue(Path(to_PNG(board.get((3, 0)))).is_file())
+
+
+class EngineSearchTests(unittest.TestCase):
+    def tactical_board(self):
+        board = nBoard(2, (8, 8), turn_order=(ClassicColor.white, ClassicColor.black))
+        board.add(King, (7, 7), ClassicColor.white)
+        board.add(King, (7, 0), ClassicColor.black)
+        board.add(Rook, (0, 0), ClassicColor.white)
+        board.add(Queen, (0, 5), ClassicColor.black)
+        return board
+
+    def test_legal_moves_default_to_current_turn(self):
+        board = self.tactical_board()
+
+        self.assertTrue(all(board.get(move.initial_position).color == ClassicColor.white for move in legal_moves(board)))
+
+    def test_find_best_move_prefers_capturing_hanging_queen(self):
+        result = find_best_move(self.tactical_board(), depth=1)
+
+        self.assertEqual(result.move, Move((0, 0), (0, 5)))
+        self.assertGreater(result.score, 0)
+        self.assertGreater(result.nodes, 1)
+
+    def test_best_move_supports_no_turn_board_when_color_is_supplied(self):
+        board = nBoard(2, (8, 8))
+        board.add(King, (7, 7), ClassicColor.white)
+        board.add(King, (7, 0), ClassicColor.black)
+        board.add(Rook, (0, 0), ClassicColor.white)
+        board.add(Queen, (0, 5), ClassicColor.black)
+
+        with self.assertRaises(ValueError):
+            best_move(board, depth=1)
+
+        self.assertEqual(best_move(board, depth=1, color=ClassicColor.white), Move((0, 0), (0, 5)))
 
 
 class GuiGeometryTests(unittest.TestCase):

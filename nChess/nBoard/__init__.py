@@ -133,6 +133,9 @@ class nBoard:
         assert self.contains(position)
         self.pieces.pop(self.pieces.index(self.get(position)))
 
+    def is_king_position(self, position: IntegerVector) -> bool:
+        return self.contains(position) and type(self.get(position)) is King
+
     def promote_if_available(self, position: IntegerVector):
         piece = self.get(position)
         if not piece.is_promotable():
@@ -156,6 +159,7 @@ class nBoard:
     def move(self, move: "Move", force: bool = False):
         assert self.contains(move.initial_position)
         assert not self.move_in_conflict(move, force=force)
+        assert not self.is_king_position(move.final_position)
 
         if not force:
             self.next_turn()

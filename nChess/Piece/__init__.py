@@ -81,7 +81,8 @@ class Piece(ABC):
         return tuple(
             move
             for move in self.all_moves()
-            if not self.board.assume_move(move).in_check(self.color)
+            if not self.board.is_king_position(move.final_position)
+            and not self.board.assume_move(move).in_check(self.color)
         )
 
     def moves(self) -> tuple["Move", ...]:
