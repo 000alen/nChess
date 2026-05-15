@@ -2,6 +2,14 @@ import unittest
 from pathlib import Path
 
 from nChess.Engine import classic_evaluate, doubled_pawns
+from nChess.GUI.geometry import (
+    board_coordinates_for_indices,
+    board_grid_size,
+    board_indices_for_position,
+    cell_indices_for_position,
+    position_for_cell_indices,
+    position_padding,
+)
 from nChess.nBoard import nBoard
 from nChess.nBoard.Board import Board, ClassicColor
 from nChess.Piece import Move, PieceData
@@ -105,6 +113,40 @@ class IntegrationSmokeTests(unittest.TestCase):
         board = Board()
 
         self.assertTrue(Path(to_PNG(board.get((3, 0)))).is_file())
+
+
+class GuiGeometryTests(unittest.TestCase):
+    def test_position_padding_extends_to_four_dimensions(self):
+        self.assertEqual(position_padding((1, 2)), (1, 2, 0, 0))
+        self.assertEqual(position_padding((1, 2, 3, 4)), (1, 2, 3, 4))
+
+    def test_cell_indices_and_positions_are_inverse(self):
+        position = (2, 3)
+
+        row, column = cell_indices_for_position(position)
+
+        self.assertEqual((row, column), (3, 2))
+        self.assertEqual(position_for_cell_indices(row, column), position)
+
+    def test_four_dimensional_board_indices_are_inverse(self):
+        board_size = (4, 4, 4, 4)
+        grid_rows, _ = board_grid_size(4, board_size)
+        position = (1, 2, 3, 1)
+
+        row, column = board_indices_for_position(position, 4, grid_rows)
+        k, h = board_coordinates_for_indices(row, column, 4, grid_rows)
+
+        self.assertEqual((k, h), position[2:])
+
+    def test_three_dimensional_board_indices_are_inverse(self):
+        board_size = (4, 4, 3)
+        grid_rows, _ = board_grid_size(3, board_size)
+        position = (1, 2, 2)
+
+        row, column = board_indices_for_position(position, 3, grid_rows)
+        k, _ = board_coordinates_for_indices(row, column, 3, grid_rows)
+
+        self.assertEqual(k, position[2])
 
 
 if __name__ == "__main__":
