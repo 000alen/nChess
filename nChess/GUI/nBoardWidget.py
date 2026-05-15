@@ -35,7 +35,7 @@ class nBoardWidget(GridLayout):
         for i in range(boards_widgets_size[0]):
             self.boards_widgets.append([])
             for j in range(boards_widgets_size[1]):
-                board_widget = BoardWidget(board_rows=self.n_board.size[0], board_columns=self.n_board.size[0], is_n_board=True)
+                board_widget = BoardWidget(board_rows=self.n_board.size[1], board_columns=self.n_board.size[0], is_n_board=True)
                 self.boards_widgets[i].append(board_widget)
                 self.add_widget(board_widget)
 
@@ -50,6 +50,10 @@ class nBoardWidget(GridLayout):
         return position
 
     def get_board_widget(self, position: IntegerVector) -> BoardWidget:
+        if self.n_board.dimension == 2:
+            return self.boards_widgets[0][0]
+        if self.n_board.dimension == 3:
+            return self.boards_widgets[0][position[2]]
         return self.boards_widgets[len(self.boards_widgets) - position[2] - 1][position[3]]
 
     def has_piece_widget(self, position: tuple[int, ...]) -> bool:
@@ -82,11 +86,13 @@ class nBoardWidget(GridLayout):
         return self.get_board_widget(position).get_cell_widget(position[:2])
 
     def find_board_widget(self, board_widget: BoardWidget) -> IntegerVector:
-        n_board_size = self.position_padding(self.n_board.size)
-        for i in range(n_board_size[2]):
-            for j in range(n_board_size[3]):
+        for i in range(len(self.boards_widgets)):
+            for j in range(len(self.boards_widgets[i])):
                 if self.boards_widgets[i][j] == board_widget:
+                    if self.n_board.dimension == 3:
+                        return j, 0
                     return len(self.boards_widgets) - i - 1, j
+        raise ValueError("board widget does not belong to this n-board")
 
     def toggle_cell_widget_highlight(self, position: tuple[int, ...]):
         position = self.position_padding(position)
@@ -96,7 +102,7 @@ class nBoardWidget(GridLayout):
         if self.n_board.dimension == 2:
             return in_board_widget_position
         elif self.n_board.dimension == 3:
-            k = self.find_board_widget(board_widget)
+            k, _ = self.find_board_widget(board_widget)
             return (*in_board_widget_position, k)
         elif self.n_board.dimension == 4:
             k, h = self.find_board_widget(board_widget)
@@ -127,8 +133,8 @@ class nBoardWidget(GridLayout):
                 self.unselect_piece(self.selected_position)
                 self.selected_position = None
                 self.move_piece_widget(move)
-                self.n_board.move(move, force=True)
-            elif self.has_piece_widget(position):
+                self.n_board.move(move, force=self.n_board.current_turn() is None)
+            elif self.has_piece_widget(position) and self.can_select_piece(position):
                 self.unselect_piece(self.selected_position)
                 self.select_piece(position)
                 self.selected_position = position
@@ -136,6 +142,10 @@ class nBoardWidget(GridLayout):
                 self.unselect_piece(self.selected_position)
                 self.selected_position = None
         else:
-            if self.has_piece_widget(position):
+            if self.has_piece_widget(position) and self.can_select_piece(position):
                 self.select_piece(position)
                 self.selected_position = position
+
+    def can_select_piece(self, position: IntegerVector) -> bool:
+        current_turn = self.n_board.current_turn()
+        return current_turn is None or self.n_board.get(position).color == current_turn

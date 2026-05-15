@@ -12,7 +12,7 @@ class Knight(Piece):
         moves = []
         for offset in self.board.L:
             move = Move(self.position, tuple(self.position[i] + offset[i] for i in range(self.board.dimension)))
-            if self.board.move_in_conflict(move):
+            if self.board.move_in_conflict(move, force=True, validate_check=False):
                 continue
             x_axis, y_axis = (axis for axis, j in enumerate(offset) if j)
             x_direction = 1 if offset[x_axis] > 0 else -1

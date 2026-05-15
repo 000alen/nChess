@@ -1,4 +1,3 @@
-from abc import ABC
 from dataclasses import dataclass
 from typing import Type
 from abc import ABC
@@ -39,18 +38,19 @@ class Piece(ABC):
     def move(self, move: "Move") -> None:
         assert self.position == move.initial_position
         self.position = move.final_position
+        self.has_moved = True
 
     def matches(self, piece_data: "PieceData") -> bool:
         return (
             self.color == piece_data.color
             and type(self) is piece_data.piece_type
             and (
-                piece_data.position is not None
-                and self.position == piece_data.position
+                piece_data.position is None
+                or self.position == piece_data.position
             )
             and (
-                piece_data.has_moved is not None
-                and self.has_moved == piece_data.has_moved
+                piece_data.has_moved is None
+                or self.has_moved == piece_data.has_moved
             )
         )
 
@@ -65,9 +65,12 @@ class Piece(ABC):
                     self.position, 
                     tuple(self.position[i] + (offset[i] * magnitude) for i in range(self.board.dimension))
                 )
-                if not self.board.move_in_conflict(move):
-                    moves.append(move)
-                else:
+                if self.board.move_in_conflict(move, force=True, validate_check=False):
+                    break
+
+                moves.append(move)
+                if self.board.contains(move.final_position):
+                    # Sliding pieces stop on the first occupied square, including captures.
                     break
         return moves
 

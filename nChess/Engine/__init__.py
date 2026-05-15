@@ -1,5 +1,5 @@
 from nChess.nBoard import nBoard, Color
-from nChess.nBoard.Classic import Classic, ClassicColor
+from nChess.nBoard.Board import Board, ClassicColor
 from nChess.Piece import PieceData
 from nChess.Piece.Bishop import Bishop
 from nChess.Piece.King import King
@@ -7,6 +7,14 @@ from nChess.Piece.Knight import Knight
 from nChess.Piece.Pawn import Pawn
 from nChess.Piece.Queen import Queen
 from nChess.Piece.Rook import Rook
+
+
+def pawns(board: nBoard, color: Color) -> tuple[Pawn, ...]:
+    return tuple(
+        piece
+        for piece in board.pieces
+        if piece.color == color and type(piece) is Pawn
+    )
 
 
 def doubled_pawns(board: nBoard, color: Color) -> int:
@@ -21,9 +29,14 @@ def doubled_pawns(board: nBoard, color: Color) -> int:
 
 def blocked_pawns(board: nBoard, color: Color) -> int:
     x = 0
-    for position in board.find(PieceData(color, Pawn)):
-        for j in range(1, board.dimension):
-            new_position = tuple(position[i] + (1 if i == j else 0) for i in range(board.dimension))
+    for pawn in pawns(board, color):
+        for axis in range(board.dimension):
+            if axis == pawn.capture_axis:
+                continue
+            new_position = tuple(
+                pawn.position[i] + (pawn.direction if i == axis else 0)
+                for i in range(board.dimension)
+            )
             x += 1 if board.contains(new_position) else 0
 
     return x
@@ -31,11 +44,14 @@ def blocked_pawns(board: nBoard, color: Color) -> int:
 
 def isolated_pawns(board: nBoard, color: Color) -> int:
     x = 0
-    for i, i_position in enumerate(board.find(PieceData(color, Pawn))):
-        for j, j_position in enumerate(board.find(PieceData(color, Pawn))):
-            if i == j:
-                continue
-            x += 1 if j_position[0] != i_position[0] + 1 or j_position[0] != i_position[0] - 1  else 0
+    friendly_pawns = pawns(board, color)
+    for i, pawn in enumerate(friendly_pawns):
+        if all(
+            abs(other.position[pawn.capture_axis] - pawn.position[pawn.capture_axis]) != 1
+            for j, other in enumerate(friendly_pawns)
+            if i != j
+        ):
+            x += 1
     return x
 
 def delta_material(board: nBoard, piece_type, color: Color, rival_color: Color) -> int:
@@ -43,11 +59,11 @@ def delta_material(board: nBoard, piece_type, color: Color, rival_color: Color) 
 
 
 def mobility(board, color) -> int:
-    return sum(len(piece.moves()) for piece in board.pieces if piece.color is color)
+    return sum(len(piece.moves()) for piece in board.pieces if piece.color == color)
 
 
-def classic_evaluate(board: Classic, color: ClassicColor) -> float:
-    rival_color = ClassicColor.black if color is ClassicColor.white else ClassicColor.black
+def classic_evaluate(board: Board, color: ClassicColor) -> float:
+    rival_color = ClassicColor.black if color is ClassicColor.white else ClassicColor.white
 
     return (
         200 * delta_material(board, King, color, rival_color)

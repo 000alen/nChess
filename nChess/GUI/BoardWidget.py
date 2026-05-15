@@ -24,7 +24,7 @@ class BoardWidget(GridLayout):
         else:
             self.board = board
             self.board_rows = self.board.size[0]
-            self.board_columns = self.board_size[1]
+            self.board_columns = self.board.size[1]
 
         self.rows = self.board_rows
 
@@ -52,6 +52,7 @@ class BoardWidget(GridLayout):
 
     def move_piece_widget(self, initial_position: IntegerVector, final_position: IntegerVector):
         piece = self.get_piece_widget(initial_position)
+        self.remove_piece_widget(initial_position)
         if self.has_piece_widget(final_position):
             self.remove_piece_widget(final_position)
         self.set_piece_widget(piece, final_position)

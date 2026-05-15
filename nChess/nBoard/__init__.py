@@ -1,5 +1,6 @@
-from typing import TypeVar
 from copy import deepcopy
+from itertools import combinations, product
+from typing import TypeVar
 
 IntegerVector = tuple[int, ...]
 Color = TypeVar("Color")
@@ -55,16 +56,18 @@ class nBoard:
 
     @staticmethod
     def compute_diagonals(dimension: int) -> tuple[IntegerVector, ...]:
-        from itertools import product
         return tuple(
-            tuple((1, -1)[k] for k in j) + (0,) * (dimension - i)
+            tuple(
+                signs[axes.index(axis)] if axis in axes else 0
+                for axis in range(dimension)
+            )
             for i in range(2, dimension + 1)
-            for j in product(range(2), repeat=i)
+            for axes in combinations(range(dimension), i)
+            for signs in product((-1, 1), repeat=i)
         )
 
     @staticmethod
     def compute_L(dimension: int) -> tuple[IntegerVector, ...]:
-        from itertools import product
         return tuple(
             tuple(
                 2 * p if k == i
@@ -113,8 +116,10 @@ class nBoard:
         for piece in self.pieces:
             if piece.position == position:
                 return True
+        return False
 
     def add(self, piece_type, position: IntegerVector, color, *args, **kwargs):
+        assert self.in_bounds(position)
         assert not self.contains(position)
         self.pieces.append(piece_type(position, color, *args, board=self, **kwargs))
 
@@ -147,19 +152,27 @@ class nBoard:
             if piece.matches(piece_data)
         )
 
-    def move_in_conflict(self, move: "Move", force: bool = True) -> bool:
+    def move_in_conflict(self, move: "Move", force: bool = True, validate_check: bool = True) -> bool:
+        if (
+            not self.in_bounds(move.initial_position)
+            or not self.in_bounds(move.final_position)
+            or not self.contains(move.initial_position)
+        ):
+            return True
+
+        moving_piece = self.get(move.initial_position)
         return not (
-            self.in_bounds(move.final_position)
-            and (
+            (
                 not self.contains(move.final_position)
-                or self.get(move.final_position).color != self.get(move.initial_position).color
+                or self.get(move.final_position).color != moving_piece.color
             )
             and (
-                self.get(move.initial_position).color == self.current_turn()
+                moving_piece.color == self.current_turn()
                 or force
-            ) and (
-                not self.assume_move(move).in_check(
-                    self.get(move.initial_position).color)
+            )
+            and (
+                not validate_check
+                or not self.assume_move(move, force=True).in_check(moving_piece.color)
             )
         )
 
@@ -179,13 +192,20 @@ class nBoard:
         return new_board
 
     def in_check(self, color: Color) -> bool:
-        from nChess.Piece.King import King
-        kings_positions = self.find(PieceData(color, King))
+        kings_positions = tuple(
+            piece.position
+            for piece in self.pieces
+            if piece.color == color and type(piece).__name__ == "King"
+        )
 
         for piece in self.pieces:
             if piece.color == color:
                 continue
-            if any(any(king_position == move.final_position for move in piece.piece.moves(self, piece.position)) for king_position in kings_positions):
+            if any(
+                king_position == move.final_position
+                for king_position in kings_positions
+                for move in piece.all_moves()
+            ):
                 return True
 
         return False
@@ -198,7 +218,7 @@ class nBoard:
             if piece.color != color:
                 continue
 
-            for move in piece.moves(self):
+            for move in piece.moves():
                 new_board = self.assume_move(move)
                 if not new_board.in_check(color):
                     return False
@@ -209,7 +229,8 @@ class nBoard:
         if self.in_check(color):
             return False
 
-        return all(len(piece.moves(self)) == 0 for piece in self.pieces if piece.color == color)
+        return all(len(piece.moves()) == 0 for piece in self.pieces if piece.color == color)
 
 
+# Imported after nBoard is defined because Piece imports nBoard for shared types.
 from nChess.Piece import Piece, Move, PieceData
