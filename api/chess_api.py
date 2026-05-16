@@ -36,6 +36,12 @@ COLOR_NAMES = {
     ClassicColor.black: "black",
 }
 
+MAX_DIMENSION = 4
+MIN_AXIS_SIZE = 4
+MAX_AXIS_SIZE = 12
+MAX_BOARD_VOLUME = 4096
+MAX_PIECES = 256
+
 
 def build_board(payload):
     dimension = int(payload.get("dimension", 0))
@@ -43,15 +49,23 @@ def build_board(payload):
     pieces = payload.get("pieces")
     turn = payload.get("turn")
 
-    if dimension < 2:
-        raise ValueError("board.dimension must be at least 2")
+    if dimension < 2 or dimension > MAX_DIMENSION:
+        raise ValueError("board.dimension must be between 2 and 4")
     if not isinstance(size, list) or len(size) != dimension:
         raise ValueError("board.size must match board.dimension")
     if not isinstance(pieces, list):
         raise ValueError("board.pieces must be a list")
+    if len(pieces) > MAX_PIECES:
+        raise ValueError(f"board.pieces cannot exceed {MAX_PIECES}")
+
+    normalized_size = tuple(int(value) for value in size)
+    if any(value < MIN_AXIS_SIZE or value > MAX_AXIS_SIZE for value in normalized_size):
+        raise ValueError(f"board.size axes must be between {MIN_AXIS_SIZE} and {MAX_AXIS_SIZE}")
+    if volume(normalized_size) > MAX_BOARD_VOLUME:
+        raise ValueError(f"board volume cannot exceed {MAX_BOARD_VOLUME}")
 
     turn_number = 1 if turn == "black" else 0
-    board = nBoard(dimension, tuple(int(value) for value in size), turn_number, TurnOrder)
+    board = nBoard(dimension, normalized_size, turn_number, TurnOrder)
 
     for piece in pieces:
         add_piece(board, piece, dimension)
@@ -127,3 +141,10 @@ def serialize_move(move):
 
 def serialize_position(position):
     return ",".join(str(value) for value in position)
+
+
+def volume(size):
+    result = 1
+    for value in size:
+        result *= value
+    return result
