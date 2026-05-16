@@ -513,11 +513,11 @@ def position_key(board: nBoard) -> tuple:
     return (
         board.dimension,
         board.size,
-        board.current_turn(),
+        color_key(board.current_turn()),
         tuple(sorted(
             (
                 type(piece).__name__,
-                piece.color,
+                color_key(piece.color),
                 piece.position,
                 piece.has_moved,
                 getattr(piece, "capture_axis", None),
@@ -525,3 +525,7 @@ def position_key(board: nBoard) -> tuple:
             for piece in board.pieces
         )),
     )
+
+
+def color_key(color: Color) -> str:
+    return getattr(color, "name", str(color))
