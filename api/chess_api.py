@@ -1,3 +1,9 @@
+import hashlib
+import json
+from collections import OrderedDict
+from http import HTTPStatus
+from uuid import uuid4
+
 from nChess.Piece import Move
 from nChess.Piece.Bishop import Bishop
 from nChess.Piece.King import King
@@ -36,6 +42,20 @@ COLOR_NAMES = {
     ClassicColor.black: "black",
 }
 
+MAX_DIMENSION = 4
+MIN_AXIS_SIZE = 4
+MAX_AXIS_SIZE = 12
+MAX_BOARD_VOLUME = 4096
+MAX_PIECES = 256
+MAX_CACHE_ITEMS = 128
+
+
+class ApiError(ValueError):
+    def __init__(self, code, message):
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
 
 def build_board(payload):
     dimension = int(payload.get("dimension", 0))
@@ -43,15 +63,23 @@ def build_board(payload):
     pieces = payload.get("pieces")
     turn = payload.get("turn")
 
-    if dimension < 2:
-        raise ValueError("board.dimension must be at least 2")
+    if dimension < 2 or dimension > MAX_DIMENSION:
+        raise ApiError("INVALID_DIMENSION", "board.dimension must be between 2 and 4")
     if not isinstance(size, list) or len(size) != dimension:
-        raise ValueError("board.size must match board.dimension")
+        raise ApiError("INVALID_SIZE", "board.size must match board.dimension")
     if not isinstance(pieces, list):
-        raise ValueError("board.pieces must be a list")
+        raise ApiError("INVALID_PIECES", "board.pieces must be a list")
+    if len(pieces) > MAX_PIECES:
+        raise ApiError("TOO_MANY_PIECES", f"board.pieces cannot exceed {MAX_PIECES}")
+
+    normalized_size = tuple(int(value) for value in size)
+    if any(value < MIN_AXIS_SIZE or value > MAX_AXIS_SIZE for value in normalized_size):
+        raise ApiError("INVALID_SIZE", f"board.size axes must be between {MIN_AXIS_SIZE} and {MAX_AXIS_SIZE}")
+    if volume(normalized_size) > MAX_BOARD_VOLUME:
+        raise ApiError("BOARD_TOO_LARGE", f"board volume cannot exceed {MAX_BOARD_VOLUME}")
 
     turn_number = 1 if turn == "black" else 0
-    board = nBoard(dimension, tuple(int(value) for value in size), turn_number, TurnOrder)
+    board = nBoard(dimension, normalized_size, turn_number, TurnOrder)
 
     for piece in pieces:
         add_piece(board, piece, dimension)
@@ -65,11 +93,11 @@ def add_piece(board, piece, dimension):
     position = piece.get("position")
 
     if kind not in PIECE_TYPES:
-        raise ValueError(f"unsupported piece kind: {kind}")
+        raise ApiError("INVALID_PIECE_KIND", f"unsupported piece kind: {kind}")
     if color_name not in COLORS:
-        raise ValueError(f"unsupported piece color: {color_name}")
+        raise ApiError("INVALID_COLOR", f"unsupported piece color: {color_name}")
     if not isinstance(position, list) or len(position) != dimension:
-        raise ValueError("piece.position must match board.dimension")
+        raise ApiError("INVALID_POSITION", "piece.position must match board.dimension")
 
     board.add(
         PIECE_TYPES[kind],
@@ -81,13 +109,13 @@ def add_piece(board, piece, dimension):
 
 def deserialize_move(payload, dimension):
     if not isinstance(payload, dict):
-        raise ValueError("move is required")
+        raise ApiError("INVALID_MOVE", "move is required")
     initial_position = payload.get("from")
     final_position = payload.get("to")
     if not isinstance(initial_position, list) or len(initial_position) != dimension:
-        raise ValueError("move.from must match board.dimension")
+        raise ApiError("INVALID_MOVE", "move.from must match board.dimension")
     if not isinstance(final_position, list) or len(final_position) != dimension:
-        raise ValueError("move.to must match board.dimension")
+        raise ApiError("INVALID_MOVE", "move.to must match board.dimension")
     return Move(
         tuple(int(value) for value in initial_position),
         tuple(int(value) for value in final_position),
@@ -97,6 +125,7 @@ def deserialize_move(payload, dimension):
 def serialize_board(board):
     return {
         "dimension": board.dimension,
+        "hash": position_hash(board),
         "size": list(board.size),
         "turn": COLOR_NAMES[board.current_turn()],
         "pieces": [serialize_piece(piece) for piece in board.pieces],
@@ -127,3 +156,81 @@ def serialize_move(move):
 
 def serialize_position(position):
     return ",".join(str(value) for value in position)
+
+
+def volume(size):
+    result = 1
+    for value in size:
+        result *= value
+    return result
+
+
+def position_hash(board):
+    payload = {
+        "dimension": board.dimension,
+        "size": list(board.size),
+        "turn": COLOR_NAMES[board.current_turn()],
+        "pieces": sorted(
+            (
+                KIND_BY_TYPE[type(piece)],
+                COLOR_NAMES[piece.color],
+                list(piece.position),
+                piece.has_moved,
+            )
+            for piece in board.pieces
+        ),
+    }
+    encoded = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()[:24]
+
+
+def new_request_id():
+    return uuid4().hex[:12]
+
+
+def cached_get(cache, key):
+    if key not in cache:
+        return None
+    value = cache.pop(key)
+    cache[key] = value
+    return value
+
+
+def cached_set(cache, key, value):
+    cache[key] = value
+    while len(cache) > MAX_CACHE_ITEMS:
+        cache.popitem(last=False)
+    return value
+
+
+def make_cache():
+    return OrderedDict()
+
+
+def error_payload(request_id, code, message):
+    return {
+        "requestId": request_id,
+        "error": {
+            "code": code,
+            "message": message,
+        },
+    }
+
+
+def write_json_response(handler, status, payload):
+    body = json.dumps(payload).encode("utf-8")
+    handler.send_response(status)
+    handler.send_header("Content-Type", "application/json")
+    handler.send_header("Content-Length", str(len(body)))
+    handler.end_headers()
+    handler.wfile.write(body)
+
+
+def handle_api_error(handler, request_id, exc):
+    if isinstance(exc, ApiError):
+        write_json_response(handler, HTTPStatus.BAD_REQUEST, error_payload(request_id, exc.code, exc.message))
+        return
+    if isinstance(exc, ValueError):
+        write_json_response(handler, HTTPStatus.BAD_REQUEST, error_payload(request_id, "BAD_REQUEST", str(exc)))
+        return
+    write_json_response(handler, HTTPStatus.INTERNAL_SERVER_ERROR, error_payload(request_id, "INTERNAL_ERROR", str(exc)))

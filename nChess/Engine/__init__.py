@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from math import inf
+from time import perf_counter
 from typing import Callable
 
 from nChess.nBoard import nBoard, Color
@@ -35,6 +36,22 @@ class SearchResult:
     score: float
     depth: int
     nodes: int
+    elapsed_ms: float = 0
+
+
+@dataclass
+class SearchContext:
+    started_at: float
+    deadline_ms: int | None = None
+    transpositions: dict[tuple[tuple, Color, int], tuple[float, Move | None]] = None
+
+    def __post_init__(self):
+        if self.transpositions is None:
+            self.transpositions = {}
+
+
+class SearchTimeout(Exception):
+    pass
 
 
 def pawns(board: nBoard, color: Color) -> tuple[Pawn, ...]:
@@ -129,16 +146,18 @@ def opponent_color(board: nBoard, color: Color) -> Color:
 
 def evaluate_position(board: nBoard, color: Color) -> float:
     rival_color = opponent_color(board, color)
+    color_activity, color_pressure = activity_metrics(board, color)
+    rival_activity, rival_pressure = activity_metrics(board, rival_color)
 
     return (
         material(board, color, rival_color)
         - 0.5 * (doubled_pawns(board, color) - doubled_pawns(board, rival_color))
         - 0.5 * (blocked_pawns(board, color) - blocked_pawns(board, rival_color))
         - 0.5 * (isolated_pawns(board, color) - isolated_pawns(board, rival_color))
-        + 0.04 * (pseudo_mobility(board, color) - pseudo_mobility(board, rival_color))
+        + 0.04 * (color_activity - rival_activity)
         + 0.3 * (pawn_advancement(board, color) - pawn_advancement(board, rival_color))
         + 0.08 * (centrality(board, color) - centrality(board, rival_color))
-        + 0.06 * (attack_pressure(board, color) - attack_pressure(board, rival_color))
+        + 0.06 * (color_pressure - rival_pressure)
         + king_safety(board, color, rival_color)
     )
 
@@ -177,18 +196,24 @@ def centrality(board: nBoard, color: Color) -> float:
 
 
 def attack_pressure(board: nBoard, color: Color) -> float:
-    attacked_positions = {
-        move.final_position
+    return activity_metrics(board, color)[1]
+
+
+def activity_metrics(board: nBoard, color: Color) -> tuple[int, float]:
+    moves = [
+        move
         for piece in board.pieces
         if piece.color == color
         for move in piece.all_moves()
-    }
+    ]
+    attacked_positions = {move.final_position for move in moves}
 
-    return sum(
+    pressure = sum(
         piece_value(piece)
         for piece in board.pieces
         if piece.color != color and type(piece) is not King and piece.position in attacked_positions
     )
+    return len(moves), pressure
 
 
 def king_safety(board: nBoard, color: Color, rival_color: Color) -> float:
@@ -260,6 +285,14 @@ def ordered_legal_moves(board: nBoard, color: Color = None) -> tuple[Move, ...]:
     )
 
 
+def tactical_moves(board: nBoard, color: Color = None) -> tuple[Move, ...]:
+    return tuple(
+        move
+        for move in ordered_legal_moves(board, color)
+        if board.contains(move.final_position) or promotes_after_move(board, move)
+    )
+
+
 def assume_engine_move(board: nBoard, move: Move) -> nBoard:
     return board.assume_move(move, force=board.current_turn() is None)
 
@@ -279,13 +312,22 @@ def negamax(
     alpha: float = -inf,
     beta: float = inf,
     ply: int = 0,
+    context: SearchContext = None,
 ) -> tuple[float, int]:
+    check_deadline(context)
     if board.in_checkmate(color):
         return -MATE_SCORE + ply, 1
     if board.in_stalemate(color):
         return DRAW_SCORE, 1
     if depth == 0:
-        return evaluator(board, color), 1
+        if board.dimension > 2:
+            return evaluator(board, color), 1
+        return quiescence(board, color, evaluator, alpha, beta, 2, context)
+
+    cache_key = (position_key(board), color, depth)
+    if context is not None and cache_key in context.transpositions:
+        cached_score, _cached_move = context.transpositions[cache_key]
+        return cached_score, 1
 
     moves = ordered_legal_moves(board, color)
     if len(moves) == 0:
@@ -304,6 +346,7 @@ def negamax(
             -beta,
             -alpha,
             ply + 1,
+            context,
         )
         score = -score
         nodes += child_nodes
@@ -314,7 +357,41 @@ def negamax(
         if alpha >= beta:
             break
 
+    if context is not None:
+        context.transpositions[cache_key] = (best_score, None)
     return best_score, nodes
+
+
+def quiescence(
+    board: nBoard,
+    color: Color,
+    evaluator: Evaluator,
+    alpha: float,
+    beta: float,
+    depth: int,
+    context: SearchContext = None,
+) -> tuple[float, int]:
+    check_deadline(context)
+    stand_pat = evaluator(board, color)
+    nodes = 1
+
+    if depth == 0:
+        return stand_pat, nodes
+    if stand_pat >= beta:
+        return beta, nodes
+    alpha = max(alpha, stand_pat)
+
+    for move in tactical_moves(board, color):
+        child = assume_engine_move(board, move)
+        child_color = next_search_color(child, color)
+        score, child_nodes = quiescence(child, child_color, evaluator, -beta, -alpha, depth - 1, context)
+        score = -score
+        nodes += child_nodes
+        if score >= beta:
+            return beta, nodes
+        alpha = max(alpha, score)
+
+    return alpha, nodes
 
 
 def find_best_move(
@@ -322,6 +399,7 @@ def find_best_move(
     depth: int = 2,
     color: Color = None,
     evaluator: Evaluator = evaluate_position,
+    context: SearchContext = None,
 ) -> SearchResult:
     if depth < 1:
         raise ValueError("depth must be at least 1")
@@ -339,17 +417,24 @@ def find_best_move(
     beta = inf
 
     for move in moves:
+        check_deadline(context)
         child = assume_engine_move(board, move)
         child_color = next_search_color(child, color)
-        score, child_nodes = negamax(
-            child,
-            depth - 1,
-            child_color,
-            evaluator,
-            -beta,
-            -alpha,
-            1,
-        )
+        try:
+            score, child_nodes = negamax(
+                child,
+                depth - 1,
+                child_color,
+                evaluator,
+                -beta,
+                -alpha,
+                1,
+                context,
+            )
+        except SearchTimeout:
+            if best_move is not None:
+                return SearchResult(best_move, best_score, depth, nodes, elapsed_ms(context.started_at))
+            raise
         score = -score
         nodes += child_nodes
 
@@ -361,6 +446,49 @@ def find_best_move(
     return SearchResult(best_move, best_score, depth, nodes)
 
 
+def iterative_deepening(
+    board: nBoard,
+    max_depth: int = 2,
+    color: Color = None,
+    evaluator: Evaluator = evaluate_position,
+    time_limit_ms: int = 750,
+) -> SearchResult:
+    start = perf_counter()
+    context = SearchContext(start, time_limit_ms)
+    max_depth = max(1, max_depth)
+    best_result = None
+
+    for depth in range(1, max_depth + 1):
+        if elapsed_ms(start) >= time_limit_ms and best_result is not None:
+            break
+
+        try:
+            result = find_best_move(board, depth, color, evaluator, context)
+        except SearchTimeout:
+            if best_result is None:
+                fallback_color = current_or_requested_color(board, color)
+                moves = ordered_legal_moves(board, fallback_color)
+                return SearchResult(
+                    moves[0] if len(moves) else None,
+                    evaluator(board, fallback_color) if len(moves) else DRAW_SCORE,
+                    0,
+                    1,
+                    elapsed_ms(start),
+                )
+            break
+        best_result = SearchResult(
+            result.move,
+            result.score,
+            result.depth,
+            result.nodes if best_result is None else best_result.nodes + result.nodes,
+            elapsed_ms(start),
+        )
+
+    if best_result is None:
+        return SearchResult(None, DRAW_SCORE, 0, 0, elapsed_ms(start))
+    return best_result
+
+
 def best_move(
     board: nBoard,
     depth: int = 2,
@@ -368,3 +496,36 @@ def best_move(
     evaluator: Evaluator = evaluate_position,
 ) -> Move | None:
     return find_best_move(board, depth, color, evaluator).move
+
+
+def elapsed_ms(start):
+    return round((perf_counter() - start) * 1000, 2)
+
+
+def check_deadline(context: SearchContext | None):
+    if context is None or context.deadline_ms is None:
+        return
+    if elapsed_ms(context.started_at) >= context.deadline_ms:
+        raise SearchTimeout()
+
+
+def position_key(board: nBoard) -> tuple:
+    return (
+        board.dimension,
+        board.size,
+        color_key(board.current_turn()),
+        tuple(sorted(
+            (
+                type(piece).__name__,
+                color_key(piece.color),
+                piece.position,
+                piece.has_moved,
+                getattr(piece, "capture_axis", None),
+            )
+            for piece in board.pieces
+        )),
+    )
+
+
+def color_key(color: Color) -> str:
+    return getattr(color, "name", str(color))

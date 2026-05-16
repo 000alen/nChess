@@ -18,11 +18,13 @@ export type Piece = {
 
 export type Move = {
   from: Position;
+  promotion?: Exclude<PieceKind, "king" | "pawn">;
   to: Position;
 };
 
 export type BoardState = {
   dimension: number;
+  hash?: string;
   size: Position;
   pieces: Piece[];
   turn: PieceColor;

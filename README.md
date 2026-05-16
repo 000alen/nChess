@@ -22,6 +22,10 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
+`pnpm dev` runs the Next.js UI only. Engine-backed actions use Vercel Python
+functions in `api/*.py`, so use `vercel dev` when testing bot, hint, evaluation,
+legal-move, or move endpoints locally.
+
 Useful checks:
 
 ```bash

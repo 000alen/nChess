@@ -18,6 +18,8 @@ import {
   type BoardDimension,
   type BoardState,
   type Piece,
+  type PieceColor,
+  type PieceKind,
   type Position,
 } from "@/lib/chess";
 
@@ -53,21 +55,38 @@ type EngineStatus = Record<"white" | "black", {
   inStalemate: boolean;
 }>;
 
+type AnalysisPartial = {
+  board?: BoardState;
+  cached?: boolean;
+  depth?: number;
+  elapsedMs?: number;
+  error?: ApiErrorPayload | string;
+  move?: Move | null;
+  nodes?: number;
+  ok?: boolean;
+  requestedDepth?: number;
+  score?: number;
+  searchElapsedMs?: number;
+};
+
+type ApiErrorPayload = {
+  code?: string;
+  message?: string;
+};
+
+type ApiFailurePayload = {
+  detail?: string;
+  error?: ApiErrorPayload | string;
+};
+
 type Theme = "dark" | "light";
+type PromotionKind = Exclude<PieceKind, "king" | "pawn">;
 const THEME_STORAGE_KEY = "nchess-theme";
-
-function getInitialTheme(): Theme {
-  if (typeof window === "undefined") {
-    return "dark";
-  }
-
-  const savedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
-  if (savedTheme === "dark" || savedTheme === "light") {
-    return savedTheme;
-  }
-
-  return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
-}
+const BOARD_PRESETS: Array<{ label: string; config: BoardConfig }> = [
+  { label: "2D Classic", config: { dimension: 2, size: [8, 8] } },
+  { label: "3D Compact", config: { dimension: 3, size: [5, 5, 4] } },
+  { label: "4D Classic", config: DEFAULT_BOARD_CONFIG },
+];
 
 export function NChessBoard() {
   const [boardConfig, setBoardConfig] = useState<BoardConfig>(DEFAULT_BOARD_CONFIG);
@@ -76,13 +95,20 @@ export function NChessBoard() {
   const [selectedPosition, setSelectedPosition] = useState<Position | null>(null);
   const [moveHistory, setMoveHistory] = useState<MoveRecord[]>([]);
   const [currentPly, setCurrentPly] = useState(0);
-  const [theme, setTheme] = useState<Theme>(getInitialTheme);
+  const [theme, setTheme] = useState<Theme>("dark");
+  const [themeLoaded, setThemeLoaded] = useState(false);
   const [botEnabled, setBotEnabled] = useState(true);
+  const [botColor, setBotColor] = useState<PieceColor>("black");
+  const [botDepth, setBotDepth] = useState(2);
+  const [botTimeLimitMs, setBotTimeLimitMs] = useState(750);
+  const [promotionChoice, setPromotionChoice] = useState<PromotionKind>("queen");
   const [botThinking, setBotThinking] = useState(false);
   const [botError, setBotError] = useState<string | null>(null);
   const [hintMove, setHintMove] = useState<Move | null>(null);
   const [hintThinking, setHintThinking] = useState(false);
   const [hintError, setHintError] = useState<string | null>(null);
+  const [analysisInfo, setAnalysisInfo] = useState<string | null>(null);
+  const [analysisMove, setAnalysisMove] = useState<Move | null>(null);
   const [legalMoves, setLegalMoves] = useState<Move[]>([]);
   const [legalMovesLoading, setLegalMovesLoading] = useState(false);
   const [moveError, setMoveError] = useState<string | null>(null);
@@ -99,7 +125,7 @@ export function NChessBoard() {
   const capturedPieces = useMemo(() => moveHistory.flatMap((record) => (
     record.capturedPiece ? [record.capturedPiece] : []
   )), [moveHistory]);
-  const canHumanMove = !botThinking && (!botEnabled || board.turn === "white");
+  const canHumanMove = !botThinking && (!botEnabled || board.turn !== botColor);
   const selectedMoves = legalMovesLoading ? [] : legalMoves;
 
   useEffect(() => {
@@ -147,8 +173,22 @@ export function NChessBoard() {
   }, [board]);
 
   useEffect(() => {
+    if (!themeLoaded) {
+      return;
+    }
     window.localStorage.setItem(THEME_STORAGE_KEY, theme);
-  }, [theme]);
+  }, [theme, themeLoaded]);
+
+  useEffect(() => {
+    const savedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
+    if (savedTheme === "dark" || savedTheme === "light") {
+      setTheme(savedTheme);
+      setThemeLoaded(true);
+      return;
+    }
+    setTheme(window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
+    setThemeLoaded(true);
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -296,17 +336,16 @@ export function NChessBoard() {
         body: JSON.stringify({
           board,
           move,
+          promotion: pieceAt(board, move.from)?.kind === "pawn" ? promotionChoice : undefined,
         }),
       });
       const payload = await response.json() as {
         board?: BoardState;
         elapsedMs?: number;
         move?: Move;
-        error?: string;
-        detail?: string;
-      };
+      } & ApiFailurePayload;
       if (!response.ok || !payload.board || !payload.move) {
-        throw new Error(payload.detail ?? payload.error ?? "Move request failed");
+        throw new Error(responseErrorMessage(payload, "Move request failed"));
       }
       const nextBoard = commitMove(board, payload.move, payload.board, "human", currentPly, payload.elapsedMs);
       setSelectedPosition(null);
@@ -320,40 +359,34 @@ export function NChessBoard() {
     setHintMove(null);
     setHintError(null);
     setHintThinking(false);
+    setAnalysisInfo(null);
+    setAnalysisMove(null);
   }
 
   async function requestHint() {
     setHintThinking(true);
     setHintError(null);
     try {
-      const response = await fetch("/api/bot", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+      const finalPartial = await streamAnalysis({
+        board,
+        color: board.turn,
+        maxDepth: botDepth,
+        timeLimitMs: botTimeLimitMs,
+        onPartial: (partial) => {
+          if (partial.move) {
+            setHintMove(partial.move);
+          setAnalysisMove(partial.move);
+          }
+          setAnalysisInfo(formatAnalysisInfo(partial));
         },
-        body: JSON.stringify({
-          board,
-          color: board.turn,
-          depth: 1,
-        }),
       });
-      const payload = await response.json() as {
-        board?: BoardState;
-        elapsedMs?: number;
-        move?: Move | null;
-        error?: string;
-        detail?: string;
-      };
 
-      if (!response.ok) {
-        throw new Error(payload.detail ?? payload.error ?? "Hint request failed");
-      }
-      if (!payload.move) {
+      if (!finalPartial?.move) {
         setHintMove(null);
-        setHintError("No legal hint available.");
+        setHintError(errorMessage(finalPartial?.error, "No legal hint available."));
         return;
       }
-      setHintMove(payload.move);
+      setHintMove(finalPartial.move);
     } catch (error) {
       setHintError(error instanceof Error ? error.message : "Hint request failed");
     } finally {
@@ -361,44 +394,81 @@ export function NChessBoard() {
     }
   }
 
-  async function requestBotMove(currentBoard: BoardState, basePly = currentPly) {
-    if (!botEnabled || currentBoard.turn !== "black") {
-      return;
-    }
+  async function streamAnalysis({
+    board: boardToAnalyze,
+    color,
+    maxDepth,
+    onPartial,
+    timeLimitMs,
+  }: {
+    board: BoardState;
+    color: PieceColor;
+    maxDepth: number;
+    onPartial: (partial: AnalysisPartial) => void;
+    timeLimitMs: number;
+  }): Promise<AnalysisPartial | null> {
+    let latestPartial: AnalysisPartial | null = null;
 
-    setBotThinking(true);
-    setBotError(null);
-    try {
+    for (let depth = 1; depth <= maxDepth; depth += 1) {
       const response = await fetch("/api/bot", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          board: currentBoard,
-          color: "black",
-          depth: 1,
+          board: boardToAnalyze,
+          color,
+          depth,
+          timeLimitMs,
         }),
       });
-
-      const payload = await response.json() as {
-        board?: BoardState;
-        elapsedMs?: number;
-        move?: Move | null;
-        error?: string;
-        detail?: string;
+      const payload = await readJsonResponse<AnalysisPartial>(response, "Analysis request failed");
+      const partial = {
+        ...payload,
+        ok: response.ok,
+        requestedDepth: depth,
       };
-      if (!response.ok) {
-        throw new Error(payload.detail ?? payload.error ?? "Bot request failed");
+      latestPartial = partial;
+      onPartial(partial);
+
+      if (!response.ok || !partial.move) {
+        break;
       }
-      if (!payload.move) {
-        setBotError("Bot has no legal move.");
+    }
+
+    return latestPartial;
+  }
+
+  async function requestBotMove(currentBoard: BoardState, basePly = currentPly) {
+    if (!botEnabled || currentBoard.turn !== botColor) {
+      return;
+    }
+
+    setBotThinking(true);
+    setBotError(null);
+    try {
+      const finalPartial = await streamAnalysis({
+        board: currentBoard,
+        color: botColor,
+        maxDepth: botDepth,
+        timeLimitMs: botTimeLimitMs,
+        onPartial: (partial) => {
+          if (partial.move) {
+            setHintMove(partial.move);
+            setAnalysisMove(partial.move);
+          }
+          setAnalysisInfo(formatAnalysisInfo(partial));
+        },
+      });
+
+      if (!finalPartial?.move) {
+        setBotError(errorMessage(finalPartial?.error, "Bot has no legal move."));
         return;
       }
 
-      const botMove = payload.move;
-      if (payload.board) {
-        commitMove(currentBoard, botMove, payload.board, "bot", basePly, payload.elapsedMs);
+      const botMove = finalPartial.move;
+      if (finalPartial.board) {
+        commitMove(currentBoard, botMove, finalPartial.board, "bot", basePly, finalPartial.elapsedMs);
       } else {
         const response = await fetch("/api/move", {
           method: "POST",
@@ -447,11 +517,15 @@ export function NChessBoard() {
               <BoardSlice
                 key={slice.coordinates.join(",") || "2d"}
                 board={board}
+                canHumanMove={canHumanMove}
                 hintMove={hintMove}
                 slice={slice}
                 selectedMoves={selectedMoves}
                 selectedPosition={selectedPosition}
                 onCellClick={handleCellClick}
+                onDropMove={(from, to) => {
+                  void requestHumanMove({ from, to });
+                }}
               />
             ))}
           </div>
@@ -470,6 +544,7 @@ export function NChessBoard() {
           </div>
           <EvaluationBar
             loading={engineEvaluation.loading}
+            positionHash={board.hash}
             score={evaluation}
             source={engineEvaluation.score === null ? "local" : "engine"}
           />
@@ -480,6 +555,18 @@ export function NChessBoard() {
             currentConfig={boardConfig}
             onApply={startNewGame}
             onChange={setDraftConfig}
+          />
+          <BotSettings
+            botColor={botColor}
+            depth={botDepth}
+            onBotColorChange={setBotColor}
+            timeLimitMs={botTimeLimitMs}
+            onDepthChange={setBotDepth}
+            onTimeLimitChange={setBotTimeLimitMs}
+          />
+          <PromotionSettings
+            promotionChoice={promotionChoice}
+            onPromotionChoiceChange={setPromotionChoice}
           />
 
           <div className="actions">
@@ -507,7 +594,7 @@ export function NChessBoard() {
             <button
               className="secondary-button"
               type="button"
-              disabled={botThinking || board.turn !== "black"}
+              disabled={botThinking || board.turn !== botColor}
               onClick={() => {
                 void requestBotMove(board, currentPly);
               }}
@@ -529,6 +616,12 @@ export function NChessBoard() {
           {hintMove ? (
             <p className="hint-line">
               Hint: {positionKey(hintMove.from)} → {positionKey(hintMove.to)}
+            </p>
+          ) : null}
+          {analysisInfo ? <p className="analysis-line">{analysisInfo}</p> : null}
+          {analysisMove ? (
+            <p className="analysis-line">
+              PV: {formatPosition(analysisMove.from)} → {formatPosition(analysisMove.to)}
             </p>
           ) : null}
 
@@ -590,6 +683,18 @@ function BoardSetup({
           <option value={4}>4D</option>
         </select>
       </label>
+      <div className="preset-grid" aria-label="Board presets">
+        {BOARD_PRESETS.map((preset) => (
+          <button
+            className="secondary-button compact"
+            key={preset.label}
+            type="button"
+            onClick={() => onChange(normalizeBoardConfig(preset.config))}
+          >
+            {preset.label}
+          </button>
+        ))}
+      </div>
       <div className="axis-grid">
         {config.size.map((axisSize, axis) => (
           <label className="field" key={`axis-${axis}`}>
@@ -617,12 +722,98 @@ function BoardSetup({
   );
 }
 
+function BotSettings({
+  botColor,
+  depth,
+  timeLimitMs,
+  onBotColorChange,
+  onDepthChange,
+  onTimeLimitChange,
+}: {
+  botColor: PieceColor;
+  depth: number;
+  timeLimitMs: number;
+  onBotColorChange: (color: PieceColor) => void;
+  onDepthChange: (depth: number) => void;
+  onTimeLimitChange: (timeLimitMs: number) => void;
+}) {
+  return (
+    <section className="setup-card" aria-label="Bot settings">
+      <div className="setup-heading">
+        <h3>Bot settings</h3>
+        <span>Timed search</span>
+      </div>
+      <div className="axis-grid">
+        <label className="field">
+          <span>Bot color</span>
+          <select value={botColor} onChange={(event) => onBotColorChange(event.target.value as PieceColor)}>
+            <option value="black">Black</option>
+            <option value="white">White</option>
+          </select>
+        </label>
+        <label className="field">
+          <span>Depth</span>
+          <input
+            type="number"
+            min={1}
+            max={3}
+            value={depth}
+            onChange={(event) => onDepthChange(clamp(Number(event.target.value), 1, 3))}
+          />
+        </label>
+        <label className="field">
+          <span>Time ms</span>
+          <input
+            type="number"
+            min={100}
+            max={3000}
+            step={100}
+            value={timeLimitMs}
+            onChange={(event) => onTimeLimitChange(clamp(Number(event.target.value), 100, 3000))}
+          />
+        </label>
+      </div>
+    </section>
+  );
+}
+
+function PromotionSettings({
+  promotionChoice,
+  onPromotionChoiceChange,
+}: {
+  promotionChoice: PromotionKind;
+  onPromotionChoiceChange: (kind: PromotionKind) => void;
+}) {
+  return (
+    <section className="setup-card" aria-label="Promotion settings">
+      <div className="setup-heading">
+        <h3>Promotion</h3>
+        <span>Choice</span>
+      </div>
+      <label className="field">
+        <span>Promote pawns to</span>
+        <select
+          value={promotionChoice}
+          onChange={(event) => onPromotionChoiceChange(event.target.value as PromotionKind)}
+        >
+          <option value="queen">Queen</option>
+          <option value="rook">Rook</option>
+          <option value="bishop">Bishop</option>
+          <option value="knight">Knight</option>
+        </select>
+      </label>
+    </section>
+  );
+}
+
 function EvaluationBar({
   loading,
+  positionHash,
   score,
   source,
 }: {
   loading: boolean;
+  positionHash?: string;
   score: number;
   source: "engine" | "local";
 }) {
@@ -638,6 +829,7 @@ function EvaluationBar({
       <p className="evaluation-source">
         {source === "engine" ? "Python engine score" : "Local material fallback"}
       </p>
+      {positionHash ? <p className="evaluation-source">Position {positionHash}</p> : null}
       <div className="evaluation-bar" aria-hidden="true">
         <div className="evaluation-white" style={{ height: `${whitePercent}%` }} />
         <div className="evaluation-marker" style={{ bottom: `${whitePercent}%` }} />
@@ -762,18 +954,22 @@ function StatusLine({ status }: { status: EngineStatus["white"] }) {
 
 function BoardSlice({
   board,
+  canHumanMove,
   hintMove,
   slice,
   selectedMoves,
   selectedPosition,
   onCellClick,
+  onDropMove,
 }: {
   board: BoardState;
+  canHumanMove: boolean;
   hintMove: Move | null;
   slice: Slice;
   selectedMoves: Move[];
   selectedPosition: Position | null;
   onCellClick: (position: Position) => void | Promise<void>;
+  onDropMove: (from: Position, to: Position) => void;
 }) {
   const cells = [];
   const columns = board.size[0];
@@ -787,11 +983,13 @@ function BoardSlice({
         <BoardCell
           key={positionKey(position)}
           board={board}
+          canHumanMove={canHumanMove}
           hintMove={hintMove}
           position={position}
           selectedMoves={selectedMoves}
           selectedPosition={selectedPosition}
           onClick={onCellClick}
+          onDropMove={onDropMove}
         />,
       );
     }
@@ -853,18 +1051,22 @@ function HintArrow({
 
 function BoardCell({
   board,
+  canHumanMove,
   hintMove,
   position,
   selectedMoves,
   selectedPosition,
   onClick,
+  onDropMove,
 }: {
   board: BoardState;
+  canHumanMove: boolean;
   hintMove: Move | null;
   position: Position;
   selectedMoves: Move[];
   selectedPosition: Position | null;
   onClick: (position: Position) => void | Promise<void>;
+  onDropMove: (from: Position, to: Position) => void;
 }) {
   const piece = pieceAt(board, position);
   const isSelected = Boolean(selectedPosition && positionsEqual(selectedPosition, position));
@@ -882,7 +1084,22 @@ function BoardCell({
         legalMove ? "legal" : "",
         isCapture ? "capture" : "",
       ].filter(Boolean).join(" ")}
+      draggable={Boolean(canHumanMove && piece?.color === board.turn)}
       type="button"
+      onDragOver={(event) => {
+        event.preventDefault();
+      }}
+      onDragStart={(event) => {
+        event.dataTransfer.setData("application/x-nchess-position", JSON.stringify(position));
+      }}
+      onDrop={(event) => {
+        event.preventDefault();
+        const rawPosition = event.dataTransfer.getData("application/x-nchess-position");
+        if (!rawPosition) {
+          return;
+        }
+        onDropMove(JSON.parse(rawPosition) as Position, position);
+      }}
       onClick={() => {
         void onClick(position);
       }}
@@ -977,7 +1194,7 @@ function axisLabel(axis: number): string {
 function describeMove(piece: Piece | undefined, capturedPiece: Piece | undefined, move: Move): string {
   const actor = piece ? `${piece.color} ${piece.kind}` : "piece";
   const capture = capturedPiece ? ` captures ${capturedPiece.color} ${capturedPiece.kind}` : "";
-  return `${actor}${capture}: ${positionKey(move.from)} → ${positionKey(move.to)}`;
+  return `${actor}${capture}: ${formatPosition(move.from)} → ${formatPosition(move.to)}`;
 }
 
 function sameBoard(left: BoardState, right: BoardState): boolean {
@@ -986,16 +1203,20 @@ function sameBoard(left: BoardState, right: BoardState): boolean {
     && left.dimension === right.dimension
     && positionsEqual(left.size, right.size)
     && left.pieces.length === right.pieces.length
-    && left.pieces.every((piece, index) => {
-      const other = right.pieces[index];
-      return Boolean(other)
-        && piece.id === other.id
-        && piece.kind === other.kind
-        && piece.color === other.color
-        && piece.hasMoved === other.hasMoved
-        && positionsEqual(piece.position, other.position);
-    })
+    && canonicalPieces(left).every((piece, index) => piece === canonicalPieces(right)[index])
   );
+}
+
+function canonicalPieces(board: BoardState): string[] {
+  return board.pieces
+    .map((piece) => [
+      piece.id,
+      piece.kind,
+      piece.color,
+      piece.hasMoved ? "1" : "0",
+      positionKey(piece.position),
+    ].join(":"))
+    .sort();
 }
 
 function formatScore(score: number): string {
@@ -1004,6 +1225,49 @@ function formatScore(score: number): string {
 
 function formatTime(timeMs: number): string {
   return `${Math.round(timeMs)}ms`;
+}
+
+function formatAnalysisInfo(partial: AnalysisPartial): string {
+  if (partial.error) {
+    return errorMessage(partial.error, "Analysis failed");
+  }
+  const depth = partial.depth ?? partial.requestedDepth ?? 0;
+  const score = typeof partial.score === "number" ? ` ${formatScore(partial.score)}` : "";
+  const nodes = typeof partial.nodes === "number" ? ` ${partial.nodes} nodes` : "";
+  const elapsed = typeof partial.searchElapsedMs === "number" ? ` ${formatTime(partial.searchElapsedMs)}` : "";
+  const cached = partial.cached ? " cached" : "";
+  return `Depth ${depth}${score}${nodes}${elapsed}${cached}`;
+}
+
+function errorMessage(error: ApiErrorPayload | string | undefined, fallback: string): string {
+  if (!error) {
+    return fallback;
+  }
+  if (typeof error === "string") {
+    return error;
+  }
+  return error.message ?? error.code ?? fallback;
+}
+
+function responseErrorMessage(payload: ApiFailurePayload, fallback: string): string {
+  return payload.detail ?? errorMessage(payload.error, fallback);
+}
+
+async function readJsonResponse<T>(response: Response, fallbackMessage: string): Promise<T> {
+  const text = await response.text();
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    const preview = text.trim().slice(0, 80);
+    throw new Error(`${fallbackMessage}: ${preview || "empty response"}`);
+  }
+}
+
+function formatPosition(position: Position): string {
+  const file = String.fromCharCode("a".charCodeAt(0) + position[0]);
+  const rank = position[1] + 1;
+  const extras = position.slice(2).map((coordinate, index) => `${axisLabel(index + 2)}${coordinate}`).join(".");
+  return extras ? `${file}${rank}.${extras}` : `${file}${rank}`;
 }
 
 function cellLabel(position: Position, piece: Piece | undefined): string {
