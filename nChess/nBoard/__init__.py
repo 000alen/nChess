@@ -10,6 +10,7 @@ class nBoard:
     dimension: int
     size: IntegerVector
     pieces: list["Piece"]
+    occupied: dict[IntegerVector, "Piece"]
     turn_number: int
     turn_order: tuple[Color, ...]
 
@@ -45,6 +46,7 @@ class nBoard:
 
         for piece in self.pieces:
             piece.set_board(self)
+        self.occupied = {piece.position: piece for piece in self.pieces}
 
     @staticmethod
     def compute_cardinals(dimension: int) -> tuple[IntegerVector, ...]:
@@ -113,25 +115,24 @@ class nBoard:
         self.turn_number += 1
 
     def contains(self, position: IntegerVector) -> bool:
-        for piece in self.pieces:
-            if piece.position == position:
-                return True
-        return False
+        return position in self.occupied
 
     def add(self, piece_type, position: IntegerVector, color, *args, **kwargs):
         assert self.in_bounds(position)
         assert not self.contains(position)
-        self.pieces.append(piece_type(position, color, *args, board=self, **kwargs))
+        piece = piece_type(position, color, *args, board=self, **kwargs)
+        self.pieces.append(piece)
+        self.occupied[position] = piece
 
     def get(self, position: IntegerVector) -> "Piece":
         assert self.contains(position)
-        for piece in self.pieces:
-            if piece.position == position:
-                return piece
+        return self.occupied[position]
 
     def remove(self, position: IntegerVector):
         assert self.contains(position)
-        self.pieces.pop(self.pieces.index(self.get(position)))
+        piece = self.get(position)
+        self.pieces.pop(self.pieces.index(piece))
+        self.occupied.pop(position)
 
     def is_king_position(self, position: IntegerVector) -> bool:
         return self.contains(position) and type(self.get(position)) is King
@@ -149,12 +150,14 @@ class nBoard:
             ),
             piece.promotions[0],
         )
-        self.pieces[self.pieces.index(piece)] = promotion_type(
+        promoted_piece = promotion_type(
             piece.position,
             piece.color,
             has_moved=True,
             board=self,
         )
+        self.pieces[self.pieces.index(piece)] = promoted_piece
+        self.occupied[position] = promoted_piece
 
     def move(self, move: "Move", force: bool = False):
         assert self.contains(move.initial_position)
@@ -164,10 +167,14 @@ class nBoard:
         if not force:
             self.next_turn()
 
+        moving_piece = self.get(move.initial_position)
+        self.occupied.pop(move.initial_position)
+
         if self.contains(move.final_position):
             self.remove(move.final_position)
 
-        self.get(move.initial_position).move(move)
+        moving_piece.move(move)
+        self.occupied[move.final_position] = moving_piece
         self.promote_if_available(move.final_position)
 
     def find(self, piece_data: "PieceData") -> tuple[IntegerVector, ...]:
@@ -209,10 +216,14 @@ class nBoard:
         if not force:
             new_board.next_turn()
 
+        moving_piece = new_board.get(move.initial_position)
+        new_board.occupied.pop(move.initial_position)
+
         if new_board.contains(move.final_position):
             new_board.remove(move.final_position)
 
-        new_board.get(move.initial_position).move(move)
+        moving_piece.move(move)
+        new_board.occupied[move.final_position] = moving_piece
         new_board.promote_if_available(move.final_position)
         
         return new_board
