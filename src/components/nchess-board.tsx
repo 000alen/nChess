@@ -393,52 +393,33 @@ export function NChessBoard() {
     onPartial: (partial: AnalysisPartial) => void;
     timeLimitMs: number;
   }): Promise<AnalysisPartial | null> {
-    const response = await fetch("/api/analyze", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        board: boardToAnalyze,
-        color,
-        maxDepth,
-        timeLimitMs,
-      }),
-    });
-
-    if (!response.ok || !response.body) {
-      throw new Error("Analysis request failed");
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
     let latestPartial: AnalysisPartial | null = null;
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) {
-        break;
-      }
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() ?? "";
-
-      for (const line of lines) {
-        if (!line.trim()) {
-          continue;
-        }
-        const partial = JSON.parse(line) as AnalysisPartial;
-        latestPartial = partial;
-        onPartial(partial);
-      }
-    }
-
-    if (buffer.trim()) {
-      const partial = JSON.parse(buffer) as AnalysisPartial;
+    for (let depth = 1; depth <= maxDepth; depth += 1) {
+      const response = await fetch("/api/bot", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          board: boardToAnalyze,
+          color,
+          depth,
+          timeLimitMs,
+        }),
+      });
+      const payload = await readJsonResponse<AnalysisPartial>(response, "Analysis request failed");
+      const partial = {
+        ...payload,
+        ok: response.ok,
+        requestedDepth: depth,
+      };
       latestPartial = partial;
       onPartial(partial);
+
+      if (!response.ok || !partial.move) {
+        break;
+      }
     }
 
     return latestPartial;
@@ -1227,6 +1208,16 @@ function formatAnalysisInfo(partial: AnalysisPartial): string {
   const nodes = typeof partial.nodes === "number" ? ` ${partial.nodes} nodes` : "";
   const elapsed = typeof partial.searchElapsedMs === "number" ? ` ${formatTime(partial.searchElapsedMs)}` : "";
   return `Depth ${depth}${score}${nodes}${elapsed}`;
+}
+
+async function readJsonResponse<T>(response: Response, fallbackMessage: string): Promise<T> {
+  const text = await response.text();
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    const preview = text.trim().slice(0, 80);
+    throw new Error(`${fallbackMessage}: ${preview || "empty response"}`);
+  }
 }
 
 function formatPosition(position: Position): string {
