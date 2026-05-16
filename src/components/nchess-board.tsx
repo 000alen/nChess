@@ -78,19 +78,6 @@ const BOARD_PRESETS: Array<{ label: string; config: BoardConfig }> = [
   { label: "4D Classic", config: DEFAULT_BOARD_CONFIG },
 ];
 
-function getInitialTheme(): Theme {
-  if (typeof window === "undefined") {
-    return "dark";
-  }
-
-  const savedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
-  if (savedTheme === "dark" || savedTheme === "light") {
-    return savedTheme;
-  }
-
-  return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
-}
-
 export function NChessBoard() {
   const [boardConfig, setBoardConfig] = useState<BoardConfig>(DEFAULT_BOARD_CONFIG);
   const [draftConfig, setDraftConfig] = useState<BoardConfig>(DEFAULT_BOARD_CONFIG);
@@ -98,7 +85,8 @@ export function NChessBoard() {
   const [selectedPosition, setSelectedPosition] = useState<Position | null>(null);
   const [moveHistory, setMoveHistory] = useState<MoveRecord[]>([]);
   const [currentPly, setCurrentPly] = useState(0);
-  const [theme, setTheme] = useState<Theme>(getInitialTheme);
+  const [theme, setTheme] = useState<Theme>("dark");
+  const [themeLoaded, setThemeLoaded] = useState(false);
   const [botEnabled, setBotEnabled] = useState(true);
   const [botColor, setBotColor] = useState<PieceColor>("black");
   const [botDepth, setBotDepth] = useState(2);
@@ -175,8 +163,22 @@ export function NChessBoard() {
   }, [board]);
 
   useEffect(() => {
+    if (!themeLoaded) {
+      return;
+    }
     window.localStorage.setItem(THEME_STORAGE_KEY, theme);
-  }, [theme]);
+  }, [theme, themeLoaded]);
+
+  useEffect(() => {
+    const savedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
+    if (savedTheme === "dark" || savedTheme === "light") {
+      setTheme(savedTheme);
+      setThemeLoaded(true);
+      return;
+    }
+    setTheme(window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
+    setThemeLoaded(true);
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
