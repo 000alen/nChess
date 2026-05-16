@@ -613,6 +613,7 @@ function BoardSlice({
   const cells = [];
   const columns = board.size[0];
   const rows = board.size[1];
+  const hintArrow = hintMove ? arrowForSlice(hintMove, slice, columns, rows) : null;
 
   for (let y = rows - 1; y >= 0; y -= 1) {
     for (let x = 0; x < columns; x += 1) {
@@ -641,8 +642,47 @@ function BoardSlice({
       <div className="slice-label">
         <span>{slice.label}</span>
       </div>
-      <div className="cells" style={gridStyle}>{cells}</div>
+      <div className="cells" style={gridStyle}>
+        {cells}
+        {hintArrow ? <HintArrow arrow={hintArrow} /> : null}
+      </div>
     </article>
+  );
+}
+
+function HintArrow({
+  arrow,
+}: {
+  arrow: {
+    from: { x: number; y: number };
+    to: { x: number; y: number };
+  };
+}) {
+  const markerId = `hint-arrow-${Math.round(arrow.from.x)}-${Math.round(arrow.from.y)}-${Math.round(arrow.to.x)}-${Math.round(arrow.to.y)}`;
+
+  return (
+    <svg className="hint-arrow" viewBox="0 0 100 100" aria-hidden="true">
+      <defs>
+        <marker
+          id={markerId}
+          markerHeight="8"
+          markerWidth="8"
+          orient="auto"
+          refX="7"
+          refY="4"
+          viewBox="0 0 8 8"
+        >
+          <path d="M0,0 L8,4 L0,8 Z" />
+        </marker>
+      </defs>
+      <line
+        x1={arrow.from.x}
+        y1={arrow.from.y}
+        x2={arrow.to.x}
+        y2={arrow.to.y}
+        markerEnd={`url(#${markerId})`}
+      />
+    </svg>
   );
 }
 
@@ -665,8 +705,6 @@ function BoardCell({
   const isSelected = Boolean(selectedPosition && positionsEqual(selectedPosition, position));
   const legalMove = selectedMoves.find((move) => positionsEqual(move.to, position));
   const isCapture = Boolean(legalMove && piece && piece.color !== board.turn);
-  const isHintFrom = Boolean(hintMove && positionsEqual(hintMove.from, position));
-  const isHintTo = Boolean(hintMove && positionsEqual(hintMove.to, position));
   const shade = (position[0] + position[1]) % 2 === 0 ? "dark" : "light";
 
   return (
@@ -678,8 +716,6 @@ function BoardCell({
         isSelected ? "selected" : "",
         legalMove ? "legal" : "",
         isCapture ? "capture" : "",
-        isHintFrom ? "hint-from" : "",
-        isHintTo ? "hint-to" : "",
       ].filter(Boolean).join(" ")}
       type="button"
       onClick={() => {
@@ -728,6 +764,45 @@ function sliceColumnCount(board: BoardState): number {
     return Math.min(board.size[2], 4);
   }
   return Math.min(board.size[3], 4);
+}
+
+function arrowForSlice(
+  move: Move,
+  slice: Slice,
+  columns: number,
+  rows: number,
+): { from: { x: number; y: number }; to: { x: number; y: number } } | null {
+  const fromSlice = move.from.slice(2);
+  const toSlice = move.to.slice(2);
+  const isFromSlice = positionsEqual(fromSlice, slice.coordinates);
+  const isToSlice = positionsEqual(toSlice, slice.coordinates);
+
+  if (!isFromSlice && !isToSlice) {
+    return null;
+  }
+
+  if (isFromSlice && isToSlice) {
+    return {
+      from: cellCenter(move.from, columns, rows),
+      to: cellCenter(move.to, columns, rows),
+    };
+  }
+
+  const anchor = isFromSlice ? cellCenter(move.from, columns, rows) : cellCenter(move.to, columns, rows);
+  return {
+    from: anchor,
+    to: {
+      x: isFromSlice ? Math.min(96, anchor.x + 18) : Math.max(4, anchor.x - 18),
+      y: isFromSlice ? Math.max(4, anchor.y - 18) : Math.min(96, anchor.y + 18),
+    },
+  };
+}
+
+function cellCenter(position: Position, columns: number, rows: number): { x: number; y: number } {
+  return {
+    x: ((position[0] + 0.5) / columns) * 100,
+    y: ((rows - position[1] - 0.5) / rows) * 100,
+  };
 }
 
 function axisLabel(axis: number): string {
