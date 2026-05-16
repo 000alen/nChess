@@ -74,6 +74,11 @@ type ApiErrorPayload = {
   message?: string;
 };
 
+type ApiFailurePayload = {
+  detail?: string;
+  error?: ApiErrorPayload | string;
+};
+
 type Theme = "dark" | "light";
 type PromotionKind = Exclude<PieceKind, "king" | "pawn">;
 const THEME_STORAGE_KEY = "nchess-theme";
@@ -338,11 +343,9 @@ export function NChessBoard() {
         board?: BoardState;
         elapsedMs?: number;
         move?: Move;
-        error?: string;
-        detail?: string;
-      };
+      } & ApiFailurePayload;
       if (!response.ok || !payload.board || !payload.move) {
-        throw new Error(payload.detail ?? payload.error ?? "Move request failed");
+        throw new Error(responseErrorMessage(payload, "Move request failed"));
       }
       const nextBoard = commitMove(board, payload.move, payload.board, "human", currentPly, payload.elapsedMs);
       setSelectedPosition(null);
@@ -1200,16 +1203,20 @@ function sameBoard(left: BoardState, right: BoardState): boolean {
     && left.dimension === right.dimension
     && positionsEqual(left.size, right.size)
     && left.pieces.length === right.pieces.length
-    && left.pieces.every((piece, index) => {
-      const other = right.pieces[index];
-      return Boolean(other)
-        && piece.id === other.id
-        && piece.kind === other.kind
-        && piece.color === other.color
-        && piece.hasMoved === other.hasMoved
-        && positionsEqual(piece.position, other.position);
-    })
+    && canonicalPieces(left).every((piece, index) => piece === canonicalPieces(right)[index])
   );
+}
+
+function canonicalPieces(board: BoardState): string[] {
+  return board.pieces
+    .map((piece) => [
+      piece.id,
+      piece.kind,
+      piece.color,
+      piece.hasMoved ? "1" : "0",
+      positionKey(piece.position),
+    ].join(":"))
+    .sort();
 }
 
 function formatScore(score: number): string {
@@ -1240,6 +1247,10 @@ function errorMessage(error: ApiErrorPayload | string | undefined, fallback: str
     return error;
   }
   return error.message ?? error.code ?? fallback;
+}
+
+function responseErrorMessage(payload: ApiFailurePayload, fallback: string): string {
+  return payload.detail ?? errorMessage(payload.error, fallback);
 }
 
 async function readJsonResponse<T>(response: Response, fallbackMessage: string): Promise<T> {
