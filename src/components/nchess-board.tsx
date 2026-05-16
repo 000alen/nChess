@@ -611,7 +611,7 @@ function slicesForBoard(board: BoardState): Slice[] {
 
   if (board.dimension === 3) {
     return Array.from({ length: board.size[2] }, (_, index) => {
-      const z = board.size[2] - index - 1;
+      const z = index;
       return {
         coordinates: [z],
         label: `z=${z}`,
