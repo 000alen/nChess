@@ -18,6 +18,7 @@ export type Piece = {
 
 export type Move = {
   from: Position;
+  promotion?: Exclude<PieceKind, "king" | "pawn">;
   to: Position;
 };
 
