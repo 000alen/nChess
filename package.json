@@ -1,0 +1,24 @@
+{
+  "name": "nchess",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A browser-based n-dimensional chess prototype.",
+  "packageManager": "pnpm@10.33.3",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "next": "16.2.6",
+    "react": "19.2.6",
+    "react-dom": "19.2.6"
+  },
+  "devDependencies": {
+    "@types/node": "25.5.0",
+    "@types/react": "19.2.10",
+    "@types/react-dom": "19.2.0",
+    "typescript": "6.0.3"
+  }
+}

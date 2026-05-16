@@ -4,13 +4,13 @@ from nChess.Piece.Queen import Queen
 from nChess.Piece.King import King
 from nChess.Piece.Rook import Rook
 from nChess.nBoard import nBoard
-from nChess.nBoard.Board import ClassicColor
+from nChess.nBoard.Board import ClassicColor, TurnOrder
 from nChess.Piece.Pawn import Pawn
 from nChess.GUI.nChessApp import nChessApp
 
 Window.size = (600, 600)
 
-n_board = nBoard(4, (4, 4, 4, 4))
+n_board = nBoard(4, (4, 4, 4, 4), turn_order=TurnOrder)
 
 n_board.add(Pawn, (0, 1, 0, 0), ClassicColor.white)
 n_board.add(Pawn, (1, 1, 0, 0), ClassicColor.white)

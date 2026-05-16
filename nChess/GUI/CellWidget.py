@@ -1,5 +1,5 @@
 from kivy.uix.gridlayout import GridLayout
-from kivy.graphics import Rectangle, Color
+from kivy.graphics import Color as KivyColor, Rectangle
 
 from nChess.GUI.PieceWidget import PieceWidget
 
@@ -10,8 +10,8 @@ HIGHLIGHT = (0.9, 0.9, 0, 1)
 
 
 class CellWidget(GridLayout):
-    color: "Color"
-    piece_widget: PieceWidget
+    base_color: tuple[float, float, float, float]
+    piece_widget: PieceWidget | None
     highlighted: bool
 
     def __init__(self, color, **kwargs):
@@ -19,43 +19,39 @@ class CellWidget(GridLayout):
 
         self.rows = 1
 
-        self.color = color
+        self.base_color = color
         self.piece_widget = None
         self.highlighted = False
 
-        self.draw_color()
+        with self.canvas.before:
+            self.fill_color = KivyColor(*self.base_color)
+            self.background = Rectangle(
+                pos=(self.x, self.y),
+                size=(self.width, self.height)
+            )
 
         self.bind(pos=self.update_cell)
         self.bind(size=self.update_cell)
 
-    def on_touch_up(self, touch):
+    def on_touch_down(self, touch):
         if self.collide_point(*touch.pos):
+            touch.grab(self)
+            return True
+        return super().on_touch_down(touch)
+
+    def on_touch_up(self, touch):
+        if touch.grab_current is self:
+            touch.ungrab(self)
             self.parent.handle_touch(self)
-        else:
-            return super().on_touch_up(touch)
+            return True
+        return super().on_touch_up(touch)
 
     def toggle_highlight(self):
-        if self.highlighted:
-            self.draw_color()
-        else:
-            self.draw_highlight()
-        self.highlighted = not self.highlighted
+        self.set_highlighted(not self.highlighted)
 
-    def draw_color(self):
-        with self.canvas.before:
-            Color(*self.color)
-            self.background = Rectangle(
-                pos=(self.x, self.y),
-                size=(self.width, self.height)
-            )
-
-    def draw_highlight(self):
-        with self.canvas.before:
-            Color(*HIGHLIGHT)
-            self.background = Rectangle(
-                pos=(self.x, self.y),
-                size=(self.width, self.height)
-            )
+    def set_highlighted(self, highlighted):
+        self.highlighted = highlighted
+        self.fill_color.rgba = HIGHLIGHT if highlighted else self.base_color
 
     def update_cell(self, *args, **kwargs):
         self.background.pos = (self.x, self.y)
@@ -65,15 +61,21 @@ class CellWidget(GridLayout):
         return self.piece_widget is not None
 
     def set_piece_widget(self, piece_widget):
+        if self.piece_widget is not None:
+            self.remove_piece_widget()
         self.piece_widget = piece_widget
-        self.add_widget(self.piece_widget, index=0)
+        self.add_widget(self.piece_widget)
 
     def get_piece_widget(self):
         return self.piece_widget
 
     def remove_piece_widget(self):
-        self.remove_widget(self.piece_widget)
+        if self.piece_widget is None:
+            return None
+        piece_widget = self.piece_widget
+        self.remove_widget(piece_widget)
         self.piece_widget = None
+        return piece_widget
 
-    def handle_touch(self, piece_widget):
+    def handle_touch(self, piece_widget=None):
         self.parent.handle_touch(self)

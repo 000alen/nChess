@@ -1,4 +1,6 @@
-from nChess.nBoard.Board import Board, ClassicColor
+from pathlib import Path
+
+from nChess.nBoard.Board import ClassicColor
 from nChess.Piece import Piece
 from nChess.Piece.Bishop import Bishop
 from nChess.Piece.King import King
@@ -6,6 +8,8 @@ from nChess.Piece.Knight import Knight
 from nChess.Piece.Pawn import Pawn
 from nChess.Piece.Queen import Queen
 from nChess.Piece.Rook import Rook
+
+ASSET_DIR = Path(__file__).parent / "GUI" / "assets"
 
 ASCII = {
     (ClassicColor.white, King): "♔",
@@ -38,18 +42,18 @@ CHAR = {
 }
 
 PNG = {
-    (ClassicColor.white, King): "assets/white_king.png",
-    (ClassicColor.white, Queen): "assets/white_queen.png",
-    (ClassicColor.white, Rook): "assets/white_rook.png",
-    (ClassicColor.white, Bishop): "assets/white_bishop.png",
-    (ClassicColor.white, Knight): "assets/white_knight.png",
-    (ClassicColor.white, Pawn): "assets/white_pawn.png",
-    (ClassicColor.black, King): "assets/black_king.png",
-    (ClassicColor.black, Queen): "assets/black_queen.png",
-    (ClassicColor.black, Rook): "assets/black_rook.png",
-    (ClassicColor.black, Bishop): "assets/black_bishop.png",
-    (ClassicColor.black, Knight): "assets/black_knight.png",
-    (ClassicColor.black, Pawn): "assets/black_pawn.png"
+    (ClassicColor.white, King): ASSET_DIR / "white_king.png",
+    (ClassicColor.white, Queen): ASSET_DIR / "white_queen.png",
+    (ClassicColor.white, Rook): ASSET_DIR / "white_rook.png",
+    (ClassicColor.white, Bishop): ASSET_DIR / "white_bishop.png",
+    (ClassicColor.white, Knight): ASSET_DIR / "white_knight.png",
+    (ClassicColor.white, Pawn): ASSET_DIR / "white_pawn.png",
+    (ClassicColor.black, King): ASSET_DIR / "black_king.png",
+    (ClassicColor.black, Queen): ASSET_DIR / "black_queen.png",
+    (ClassicColor.black, Rook): ASSET_DIR / "black_rook.png",
+    (ClassicColor.black, Bishop): ASSET_DIR / "black_bishop.png",
+    (ClassicColor.black, Knight): ASSET_DIR / "black_knight.png",
+    (ClassicColor.black, Pawn): ASSET_DIR / "black_pawn.png"
 }
 
 WhiteKing = (ClassicColor.white, King)
@@ -76,4 +80,4 @@ def to_char(piece: Piece) -> str:
 
 
 def to_PNG(piece: Piece) -> str:
-    return PNG[(piece.color, type(piece))]
+    return str(PNG[(piece.color, type(piece))])

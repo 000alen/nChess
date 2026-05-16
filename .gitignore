@@ -1,5 +1,9 @@
 .vscode/
 .idea/
+node_modules/
+.next/
+artifacts/
+*.tsbuildinfo
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
