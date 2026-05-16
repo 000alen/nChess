@@ -4,7 +4,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler
 
 from api.chess_api import COLORS, build_board, serialize_board, serialize_move
-from nChess.Engine import evaluate_position, find_best_move
+from nChess.Engine import evaluate_position, iterative_deepening
 
 
 class handler(BaseHTTPRequestHandler):
@@ -49,11 +49,19 @@ def choose_bot_move(request):
     if color_name not in COLORS:
         raise ValueError("color must be 'white' or 'black'")
 
-    depth = int(request.get("depth", 1))
-    depth = max(1, min(depth, 1))
+    depth = int(request.get("depth", 2))
+    depth = max(1, min(depth, 3))
+    time_limit_ms = int(request.get("timeLimitMs", 750))
+    time_limit_ms = max(100, min(time_limit_ms, 3000))
 
     board = build_board(board_payload)
-    result = find_best_move(board, depth=depth, color=COLORS[color_name], evaluator=evaluate_position)
+    result = iterative_deepening(
+        board,
+        max_depth=depth,
+        color=COLORS[color_name],
+        evaluator=evaluate_position,
+        time_limit_ms=time_limit_ms,
+    )
     if result.move is not None:
         board.move(result.move)
 
@@ -64,6 +72,7 @@ def choose_bot_move(request):
         "depth": result.depth,
         "nodes": result.nodes,
         "elapsedMs": elapsed_ms(start),
+        "searchElapsedMs": result.elapsed_ms,
     }
 
 

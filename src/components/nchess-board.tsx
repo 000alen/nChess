@@ -78,6 +78,8 @@ export function NChessBoard() {
   const [currentPly, setCurrentPly] = useState(0);
   const [theme, setTheme] = useState<Theme>(getInitialTheme);
   const [botEnabled, setBotEnabled] = useState(true);
+  const [botDepth, setBotDepth] = useState(2);
+  const [botTimeLimitMs, setBotTimeLimitMs] = useState(750);
   const [botThinking, setBotThinking] = useState(false);
   const [botError, setBotError] = useState<string | null>(null);
   const [hintMove, setHintMove] = useState<Move | null>(null);
@@ -334,7 +336,8 @@ export function NChessBoard() {
         body: JSON.stringify({
           board,
           color: board.turn,
-          depth: 1,
+          depth: botDepth,
+          timeLimitMs: botTimeLimitMs,
         }),
       });
       const payload = await response.json() as {
@@ -377,7 +380,8 @@ export function NChessBoard() {
         body: JSON.stringify({
           board: currentBoard,
           color: "black",
-          depth: 1,
+          depth: botDepth,
+          timeLimitMs: botTimeLimitMs,
         }),
       });
 
@@ -480,6 +484,12 @@ export function NChessBoard() {
             currentConfig={boardConfig}
             onApply={startNewGame}
             onChange={setDraftConfig}
+          />
+          <BotSettings
+            depth={botDepth}
+            timeLimitMs={botTimeLimitMs}
+            onDepthChange={setBotDepth}
+            onTimeLimitChange={setBotTimeLimitMs}
           />
 
           <div className="actions">
@@ -613,6 +623,50 @@ function BoardSetup({
         New {normalizedConfig.dimension}D game
       </button>
       <p className="setup-note">Generated starts require at least 4 cells per axis.</p>
+    </section>
+  );
+}
+
+function BotSettings({
+  depth,
+  timeLimitMs,
+  onDepthChange,
+  onTimeLimitChange,
+}: {
+  depth: number;
+  timeLimitMs: number;
+  onDepthChange: (depth: number) => void;
+  onTimeLimitChange: (timeLimitMs: number) => void;
+}) {
+  return (
+    <section className="setup-card" aria-label="Bot settings">
+      <div className="setup-heading">
+        <h3>Bot settings</h3>
+        <span>Timed search</span>
+      </div>
+      <div className="axis-grid">
+        <label className="field">
+          <span>Depth</span>
+          <input
+            type="number"
+            min={1}
+            max={3}
+            value={depth}
+            onChange={(event) => onDepthChange(clamp(Number(event.target.value), 1, 3))}
+          />
+        </label>
+        <label className="field">
+          <span>Time ms</span>
+          <input
+            type="number"
+            min={100}
+            max={3000}
+            step={100}
+            value={timeLimitMs}
+            onChange={(event) => onTimeLimitChange(clamp(Number(event.target.value), 100, 3000))}
+          />
+        </label>
+      </div>
     </section>
   );
 }
@@ -977,7 +1031,7 @@ function axisLabel(axis: number): string {
 function describeMove(piece: Piece | undefined, capturedPiece: Piece | undefined, move: Move): string {
   const actor = piece ? `${piece.color} ${piece.kind}` : "piece";
   const capture = capturedPiece ? ` captures ${capturedPiece.color} ${capturedPiece.kind}` : "";
-  return `${actor}${capture}: ${positionKey(move.from)} → ${positionKey(move.to)}`;
+  return `${actor}${capture}: ${formatPosition(move.from)} → ${formatPosition(move.to)}`;
 }
 
 function sameBoard(left: BoardState, right: BoardState): boolean {
@@ -1004,6 +1058,13 @@ function formatScore(score: number): string {
 
 function formatTime(timeMs: number): string {
   return `${Math.round(timeMs)}ms`;
+}
+
+function formatPosition(position: Position): string {
+  const file = String.fromCharCode("a".charCodeAt(0) + position[0]);
+  const rank = position[1] + 1;
+  const extras = position.slice(2).map((coordinate, index) => `${axisLabel(index + 2)}${coordinate}`).join(".");
+  return extras ? `${file}${rank}.${extras}` : `${file}${rank}`;
 }
 
 function cellLabel(position: Position, piece: Piece | undefined): string {
