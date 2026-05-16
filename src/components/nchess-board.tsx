@@ -226,15 +226,6 @@ export function NChessBoard() {
         </button>
       </header>
 
-      <section className="hero">
-        <p className="eyebrow">n-dimensional chess</p>
-        <h1>Play 4D chess against the engine.</h1>
-        <p>
-          Select a piece, inspect legal destinations across the 4D slices, rewind any
-          ply, and watch the Python engine evaluation update as the position changes.
-        </p>
-      </section>
-
       <section className="game-layout" aria-label="nChess game">
         <div className="board-stack">
           <div className="slice-grid">

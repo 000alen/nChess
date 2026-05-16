@@ -108,35 +108,6 @@ button {
   background: var(--surface-3);
 }
 
-.hero {
-  margin: 0 auto 18px;
-  max-width: 1180px;
-}
-
-.eyebrow {
-  color: var(--brand);
-  font-size: 0.75rem;
-  font-weight: 900;
-  letter-spacing: 0.16em;
-  margin: 0 0 8px;
-  text-transform: uppercase;
-}
-
-.hero h1 {
-  font-size: clamp(2rem, 5vw, 4.5rem);
-  line-height: 0.96;
-  margin: 0;
-  max-width: 840px;
-}
-
-.hero p {
-  color: var(--muted);
-  font-size: 1rem;
-  line-height: 1.55;
-  margin: 12px 0 0;
-  max-width: 720px;
-}
-
 .game-layout {
   align-items: start;
   display: grid;
@@ -486,18 +457,6 @@ button {
 
   .theme-toggle {
     width: 100%;
-  }
-
-  .hero {
-    margin-bottom: 12px;
-  }
-
-  .hero h1 {
-    font-size: 2.15rem;
-  }
-
-  .hero p {
-    font-size: 0.92rem;
   }
 
   .board-stack {
