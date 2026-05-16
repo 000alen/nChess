@@ -55,6 +55,19 @@ type EngineStatus = Record<"white" | "black", {
   inStalemate: boolean;
 }>;
 
+type AnalysisPartial = {
+  board?: BoardState;
+  depth?: number;
+  elapsedMs?: number;
+  error?: string;
+  move?: Move | null;
+  nodes?: number;
+  ok?: boolean;
+  requestedDepth?: number;
+  score?: number;
+  searchElapsedMs?: number;
+};
+
 type Theme = "dark" | "light";
 type PromotionKind = Exclude<PieceKind, "king" | "pawn">;
 const THEME_STORAGE_KEY = "nchess-theme";
@@ -95,6 +108,7 @@ export function NChessBoard() {
   const [hintMove, setHintMove] = useState<Move | null>(null);
   const [hintThinking, setHintThinking] = useState(false);
   const [hintError, setHintError] = useState<string | null>(null);
+  const [analysisInfo, setAnalysisInfo] = useState<string | null>(null);
   const [legalMoves, setLegalMoves] = useState<Move[]>([]);
   const [legalMovesLoading, setLegalMovesLoading] = useState(false);
   const [moveError, setMoveError] = useState<string | null>(null);
@@ -333,46 +347,101 @@ export function NChessBoard() {
     setHintMove(null);
     setHintError(null);
     setHintThinking(false);
+    setAnalysisInfo(null);
   }
 
   async function requestHint() {
     setHintThinking(true);
     setHintError(null);
     try {
-      const response = await fetch("/api/bot", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+      const finalPartial = await streamAnalysis({
+        board,
+        color: board.turn,
+        maxDepth: botDepth,
+        timeLimitMs: botTimeLimitMs,
+        onPartial: (partial) => {
+          if (partial.move) {
+            setHintMove(partial.move);
+          }
+          setAnalysisInfo(formatAnalysisInfo(partial));
         },
-        body: JSON.stringify({
-          board,
-          color: board.turn,
-          depth: botDepth,
-          timeLimitMs: botTimeLimitMs,
-        }),
       });
-      const payload = await response.json() as {
-        board?: BoardState;
-        elapsedMs?: number;
-        move?: Move | null;
-        error?: string;
-        detail?: string;
-      };
 
-      if (!response.ok) {
-        throw new Error(payload.detail ?? payload.error ?? "Hint request failed");
-      }
-      if (!payload.move) {
+      if (!finalPartial?.move) {
         setHintMove(null);
-        setHintError("No legal hint available.");
+        setHintError(finalPartial?.error ?? "No legal hint available.");
         return;
       }
-      setHintMove(payload.move);
+      setHintMove(finalPartial.move);
     } catch (error) {
       setHintError(error instanceof Error ? error.message : "Hint request failed");
     } finally {
       setHintThinking(false);
     }
+  }
+
+  async function streamAnalysis({
+    board: boardToAnalyze,
+    color,
+    maxDepth,
+    onPartial,
+    timeLimitMs,
+  }: {
+    board: BoardState;
+    color: PieceColor;
+    maxDepth: number;
+    onPartial: (partial: AnalysisPartial) => void;
+    timeLimitMs: number;
+  }): Promise<AnalysisPartial | null> {
+    const response = await fetch("/api/analyze", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        board: boardToAnalyze,
+        color,
+        maxDepth,
+        timeLimitMs,
+      }),
+    });
+
+    if (!response.ok || !response.body) {
+      throw new Error("Analysis request failed");
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let latestPartial: AnalysisPartial | null = null;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+
+      for (const line of lines) {
+        if (!line.trim()) {
+          continue;
+        }
+        const partial = JSON.parse(line) as AnalysisPartial;
+        latestPartial = partial;
+        onPartial(partial);
+      }
+    }
+
+    if (buffer.trim()) {
+      const partial = JSON.parse(buffer) as AnalysisPartial;
+      latestPartial = partial;
+      onPartial(partial);
+    }
+
+    return latestPartial;
   }
 
   async function requestBotMove(currentBoard: BoardState, basePly = currentPly) {
@@ -383,37 +452,27 @@ export function NChessBoard() {
     setBotThinking(true);
     setBotError(null);
     try {
-      const response = await fetch("/api/bot", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+      const finalPartial = await streamAnalysis({
+        board: currentBoard,
+        color: botColor,
+        maxDepth: botDepth,
+        timeLimitMs: botTimeLimitMs,
+        onPartial: (partial) => {
+          if (partial.move) {
+            setHintMove(partial.move);
+          }
+          setAnalysisInfo(formatAnalysisInfo(partial));
         },
-        body: JSON.stringify({
-          board: currentBoard,
-          color: botColor,
-          depth: botDepth,
-          timeLimitMs: botTimeLimitMs,
-        }),
       });
 
-      const payload = await response.json() as {
-        board?: BoardState;
-        elapsedMs?: number;
-        move?: Move | null;
-        error?: string;
-        detail?: string;
-      };
-      if (!response.ok) {
-        throw new Error(payload.detail ?? payload.error ?? "Bot request failed");
-      }
-      if (!payload.move) {
-        setBotError("Bot has no legal move.");
+      if (!finalPartial?.move) {
+        setBotError(finalPartial?.error ?? "Bot has no legal move.");
         return;
       }
 
-      const botMove = payload.move;
-      if (payload.board) {
-        commitMove(currentBoard, botMove, payload.board, "bot", basePly, payload.elapsedMs);
+      const botMove = finalPartial.move;
+      if (finalPartial.board) {
+        commitMove(currentBoard, botMove, finalPartial.board, "bot", basePly, finalPartial.elapsedMs);
       } else {
         const response = await fetch("/api/move", {
           method: "POST",
@@ -562,6 +621,7 @@ export function NChessBoard() {
               Hint: {positionKey(hintMove.from)} → {positionKey(hintMove.to)}
             </p>
           ) : null}
+          {analysisInfo ? <p className="analysis-line">{analysisInfo}</p> : null}
 
           <HistoryPanel
             capturedPieces={capturedPieces}
@@ -1156,6 +1216,17 @@ function formatScore(score: number): string {
 
 function formatTime(timeMs: number): string {
   return `${Math.round(timeMs)}ms`;
+}
+
+function formatAnalysisInfo(partial: AnalysisPartial): string {
+  if (partial.error) {
+    return partial.error;
+  }
+  const depth = partial.depth ?? partial.requestedDepth ?? 0;
+  const score = typeof partial.score === "number" ? ` ${formatScore(partial.score)}` : "";
+  const nodes = typeof partial.nodes === "number" ? ` ${partial.nodes} nodes` : "";
+  const elapsed = typeof partial.searchElapsedMs === "number" ? ` ${formatTime(partial.searchElapsedMs)}` : "";
+  return `Depth ${depth}${score}${nodes}${elapsed}`;
 }
 
 function formatPosition(position: Position): string {

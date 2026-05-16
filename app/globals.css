@@ -465,7 +465,8 @@ button {
 }
 
 .hint-error,
-.hint-line {
+.hint-line,
+.analysis-line {
   border: 1px solid var(--border);
   font-size: 0.88rem;
   margin: -4px 0 12px;
@@ -480,6 +481,12 @@ button {
 .hint-line {
   background: color-mix(in srgb, var(--brand) 18%, var(--surface));
   color: var(--text);
+  font-weight: 800;
+}
+
+.analysis-line {
+  background: var(--surface-2);
+  color: var(--muted);
   font-weight: 800;
 }
 
