@@ -39,11 +39,14 @@ type EngineEvaluation = {
   score: number | null;
 };
 
+type Theme = "dark" | "light";
+
 export function NChessBoard() {
   const [board, setBoard] = useState<BoardState>(() => createInitialBoard());
   const [selectedPosition, setSelectedPosition] = useState<Position | null>(null);
   const [moveHistory, setMoveHistory] = useState<MoveRecord[]>([]);
   const [currentPly, setCurrentPly] = useState(0);
+  const [theme, setTheme] = useState<Theme>("dark");
   const [botEnabled, setBotEnabled] = useState(true);
   const [botThinking, setBotThinking] = useState(false);
   const [botError, setBotError] = useState<string | null>(null);
@@ -207,14 +210,28 @@ export function NChessBoard() {
   }
 
   return (
-    <main className="page-shell">
+    <main className="page-shell" data-theme={theme}>
+      <header className="top-bar">
+        <div>
+          <p className="brand-kicker">nChess</p>
+          <strong>4D Chess Arena</strong>
+        </div>
+        <button
+          className="theme-toggle"
+          type="button"
+          aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+          onClick={() => setTheme((currentTheme) => (currentTheme === "dark" ? "light" : "dark"))}
+        >
+          {theme === "dark" ? "Light mode" : "Dark mode"}
+        </button>
+      </header>
+
       <section className="hero">
         <p className="eyebrow">n-dimensional chess</p>
-        <h1>Play the 4D prototype in the browser.</h1>
+        <h1>Play 4D chess against the engine.</h1>
         <p>
-          This Next.js version replaces the Kivy-only GUI with a model-driven React board.
-          Select a piece, inspect legal destinations across the 4D slices, and move pieces
-          without a desktop runtime.
+          Select a piece, inspect legal destinations across the 4D slices, rewind any
+          ply, and watch the Python engine evaluation update as the position changes.
         </p>
       </section>
 
@@ -235,7 +252,10 @@ export function NChessBoard() {
         </div>
 
         <aside className="side-panel">
-          <h2>Game state</h2>
+          <div className="panel-title">
+            <h2>Game state</h2>
+            <span>{botEnabled ? "Vs bot" : "Analysis"}</span>
+          </div>
           <div className="status">
             <span>Turn</span>
             <div className="turn">{botThinking ? "Bot thinking..." : board.turn}</div>
@@ -319,8 +339,8 @@ function EvaluationBar({
         <div className="evaluation-marker" style={{ bottom: `${whitePercent}%` }} />
       </div>
       <div className="evaluation-labels">
-        <span>Black</span>
-        <span>White</span>
+        <span>Black better</span>
+        <span>White better</span>
       </div>
     </section>
   );
