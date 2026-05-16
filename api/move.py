@@ -1,22 +1,20 @@
-import json
 from time import perf_counter
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler
 
-from api.chess_api import PIECE_TYPES, build_board, deserialize_move, serialize_board, serialize_move
+from api.chess_api import PIECE_TYPES, build_board, deserialize_move, handle_api_error, new_request_id, position_hash, serialize_board, serialize_move, write_json_response
 from nChess.Piece.Pawn import Pawn
 
 
 class handler(BaseHTTPRequestHandler):
     def do_POST(self):
+        request_id = new_request_id()
         try:
             request = self.read_json()
-            response = move_request(request)
+            response = move_request(request, request_id)
             self.write_json(HTTPStatus.OK, response)
-        except ValueError as exc:
-            self.write_json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
         except Exception as exc:
-            self.write_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": "move failed", "detail": str(exc)})
+            handle_api_error(self, request_id, exc)
 
     def do_OPTIONS(self):
         self.send_response(HTTPStatus.NO_CONTENT)
@@ -28,24 +26,21 @@ class handler(BaseHTTPRequestHandler):
         content_length = int(self.headers.get("content-length", 0))
         if content_length == 0:
             raise ValueError("request body is required")
+        import json
         return json.loads(self.rfile.read(content_length))
 
     def write_json(self, status, payload):
-        body = json.dumps(payload).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+        write_json_response(self, status, payload)
 
 
-def move_request(request):
+def move_request(request, request_id=None):
     start = perf_counter()
     board_payload = request.get("board")
     if not isinstance(board_payload, dict):
         raise ValueError("board is required")
 
     board = build_board(board_payload)
+    before_hash = position_hash(board)
     move_payload = request.get("move")
     move = deserialize_move(move_payload, board.dimension)
     initial_piece = board.get(move.initial_position)
@@ -56,8 +51,10 @@ def move_request(request):
     apply_promotion_choice(board, initial_piece, move, request.get("promotion") or move_payload.get("promotion"))
 
     return {
+        "requestId": request_id,
         "move": serialize_move(move),
         "board": serialize_board(board),
+        "positionHash": before_hash,
         "elapsedMs": elapsed_ms(start),
     }
 

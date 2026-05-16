@@ -1,23 +1,23 @@
-import json
 from time import perf_counter
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler
 
-from api.chess_api import COLORS, build_board
+from api.chess_api import COLORS, build_board, cached_get, cached_set, handle_api_error, make_cache, new_request_id, position_hash, write_json_response
 from nChess.Engine import evaluate_position
 from nChess.nBoard.Board import ClassicColor
+
+EVALUATE_CACHE = make_cache()
 
 
 class handler(BaseHTTPRequestHandler):
     def do_POST(self):
+        request_id = new_request_id()
         try:
             request = self.read_json()
-            response = evaluate_request(request)
+            response = evaluate_request(request, request_id)
             self.write_json(HTTPStatus.OK, response)
-        except ValueError as exc:
-            self.write_json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
         except Exception as exc:
-            self.write_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": "evaluation failed", "detail": str(exc)})
+            handle_api_error(self, request_id, exc)
 
     def do_OPTIONS(self):
         self.send_response(HTTPStatus.NO_CONTENT)
@@ -29,18 +29,14 @@ class handler(BaseHTTPRequestHandler):
         content_length = int(self.headers.get("content-length", 0))
         if content_length == 0:
             raise ValueError("request body is required")
+        import json
         return json.loads(self.rfile.read(content_length))
 
     def write_json(self, status, payload):
-        body = json.dumps(payload).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+        write_json_response(self, status, payload)
 
 
-def evaluate_request(request):
+def evaluate_request(request, request_id=None):
     start = perf_counter()
     board_payload = request.get("board")
     if not isinstance(board_payload, dict):
@@ -52,18 +48,29 @@ def evaluate_request(request):
 
     board = build_board(board_payload)
     color = COLORS[color_name]
+    board_hash = position_hash(board)
+    cache_key = (board_hash, color_name)
+    cached = cached_get(EVALUATE_CACHE, cache_key)
+    if cached is not None:
+        return {**cached, "requestId": request_id, "cached": True, "elapsedMs": elapsed_ms(start)}
+
     score = evaluate_position(board, color)
 
-    return {
+    payload = {
+        "requestId": request_id,
         "color": color_name,
+        "positionHash": board_hash,
         "score": score,
         "whiteScore": score if color is ClassicColor.white else -score,
         "status": {
             "white": board_status(board, ClassicColor.white),
             "black": board_status(board, ClassicColor.black),
         },
+        "cached": False,
         "elapsedMs": elapsed_ms(start),
     }
+    cached_set(EVALUATE_CACHE, cache_key, {key: value for key, value in payload.items() if key not in {"requestId", "elapsedMs", "cached"}})
+    return payload
 
 
 def board_status(board, color):
