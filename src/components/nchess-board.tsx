@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import {
   applyMove,
   createInitialBoard,
+  evaluateBoard,
   legalMovesForPiece,
   Move,
   nextTurn,
@@ -22,14 +23,27 @@ type Slice = {
   h: number;
 };
 
+type MoveActor = "human" | "bot";
+
+type MoveRecord = {
+  id: string;
+  actor: MoveActor;
+  board: BoardState;
+  label: string;
+  move: Move;
+  ply: number;
+};
+
 export function NChessBoard() {
   const [board, setBoard] = useState<BoardState>(() => createInitialBoard());
   const [selectedPosition, setSelectedPosition] = useState<Position | null>(null);
-  const [history, setHistory] = useState<string[]>([]);
+  const [moveHistory, setMoveHistory] = useState<MoveRecord[]>([]);
+  const [currentPly, setCurrentPly] = useState(0);
   const [botEnabled, setBotEnabled] = useState(true);
   const [botThinking, setBotThinking] = useState(false);
   const [botError, setBotError] = useState<string | null>(null);
 
+  const evaluation = useMemo(() => evaluateBoard(board), [board]);
   const selectedPiece = selectedPosition ? pieceAt(board, selectedPosition) : undefined;
   const canHumanMove = !botThinking && (!botEnabled || board.turn === "white");
   const selectedMoves = useMemo(() => {
@@ -42,9 +56,42 @@ export function NChessBoard() {
   function resetGame() {
     setBoard(createInitialBoard());
     setSelectedPosition(null);
-    setHistory([]);
+    setMoveHistory([]);
+    setCurrentPly(0);
     setBotError(null);
     setBotThinking(false);
+  }
+
+  function commitMove(currentBoard: BoardState, move: Move, actor: MoveActor, basePly: number): BoardState {
+    const movingPiece = pieceAt(currentBoard, move.from);
+    const capturedPiece = pieceAt(currentBoard, move.to);
+    const nextBoard = applyMove(currentBoard, move);
+    const record: MoveRecord = {
+      actor,
+      board: nextBoard,
+      id: `${basePly + 1}-${positionKey(move.from)}-${positionKey(move.to)}`,
+      label: describeMove(movingPiece, capturedPiece, move),
+      move,
+      ply: basePly + 1,
+    };
+
+    setBoard(nextBoard);
+    setMoveHistory((records) => [...records.slice(0, basePly), record]);
+    setCurrentPly(record.ply);
+    return nextBoard;
+  }
+
+  function jumpToPly(ply: number) {
+    if (botThinking) {
+      return;
+    }
+
+    const boundedPly = Math.max(0, Math.min(ply, moveHistory.length));
+    const targetBoard = boundedPly === 0 ? createInitialBoard() : moveHistory[boundedPly - 1].board;
+    setBoard(targetBoard);
+    setCurrentPly(boundedPly);
+    setSelectedPosition(null);
+    setBotError(null);
   }
 
   async function handleCellClick(position: Position) {
@@ -56,16 +103,9 @@ export function NChessBoard() {
     const matchingMove = selectedMoves.find((move) => positionsEqual(move.to, position));
 
     if (matchingMove) {
-      const movingPiece = pieceAt(board, matchingMove.from);
-      const capturedPiece = pieceAt(board, matchingMove.to);
-      const nextBoard = applyMove(board, matchingMove);
-      setBoard(nextBoard);
+      const nextBoard = commitMove(board, matchingMove, "human", currentPly);
       setSelectedPosition(null);
-      setHistory((moves) => [
-        describeMove(movingPiece, capturedPiece, matchingMove),
-        ...moves,
-      ].slice(0, 12));
-      await requestBotMove(nextBoard);
+      await requestBotMove(nextBoard, currentPly + 1);
       return;
     }
 
@@ -77,7 +117,7 @@ export function NChessBoard() {
     setSelectedPosition(null);
   }
 
-  async function requestBotMove(currentBoard: BoardState) {
+  async function requestBotMove(currentBoard: BoardState, basePly = currentPly) {
     if (!botEnabled || currentBoard.turn !== "black") {
       return;
     }
@@ -106,19 +146,12 @@ export function NChessBoard() {
         throw new Error(payload.detail ?? payload.error ?? "Bot request failed");
       }
       if (!payload.move) {
-        setHistory((moves) => ["black bot has no legal move", ...moves].slice(0, 12));
+        setBotError("Bot has no legal move.");
         return;
       }
 
       const botMove = payload.move;
-      const movingPiece = pieceAt(currentBoard, botMove.from);
-      const capturedPiece = pieceAt(currentBoard, botMove.to);
-      const nextBoard = applyMove(currentBoard, botMove);
-      setBoard(nextBoard);
-      setHistory((moves) => [
-        `${describeMove(movingPiece, capturedPiece, botMove)} (bot)`,
-        ...moves,
-      ].slice(0, 12));
+      commitMove(currentBoard, botMove, "bot", basePly);
     } catch (error) {
       setBotError(error instanceof Error ? error.message : "Bot request failed");
     } finally {
@@ -160,6 +193,7 @@ export function NChessBoard() {
             <span>Turn</span>
             <div className="turn">{botThinking ? "Bot thinking..." : board.turn}</div>
           </div>
+          <EvaluationBar score={evaluation} />
           {botError ? <p className="bot-error">{botError}</p> : null}
 
           <div className="actions">
@@ -179,7 +213,7 @@ export function NChessBoard() {
               type="button"
               disabled={botThinking || board.turn !== "black"}
               onClick={() => {
-                void requestBotMove(board);
+                void requestBotMove(board, currentPly);
               }}
             >
               Bot move
@@ -188,25 +222,113 @@ export function NChessBoard() {
               className="secondary-button"
               type="button"
               disabled={botThinking}
-              onClick={() => setBoard((currentBoard) => ({ ...currentBoard, turn: nextTurn(currentBoard.turn) }))}
+              onClick={() => {
+                setBoard((currentBoard) => ({ ...currentBoard, turn: nextTurn(currentBoard.turn) }));
+              }}
             >
               Pass turn
             </button>
           </div>
 
-          <h3>Recent moves</h3>
-          {history.length === 0 ? (
-            <p>No moves yet.</p>
-          ) : (
-            <ol className="move-list">
-              {history.map((entry, index) => (
-                <li key={`${entry}-${index}`}>{entry}</li>
-              ))}
-            </ol>
-          )}
+          <HistoryPanel
+            currentPly={currentPly}
+            disabled={botThinking}
+            moveHistory={moveHistory}
+            onJump={jumpToPly}
+          />
         </aside>
       </section>
     </main>
+  );
+}
+
+function EvaluationBar({ score }: { score: number }) {
+  const whitePercent = clamp(50 + score * 4, 4, 96);
+  const label = `${score >= 0 ? "+" : ""}${score.toFixed(1)}`;
+
+  return (
+    <section className="evaluation-card" aria-label={`Evaluation ${label}`}>
+      <div className="evaluation-heading">
+        <span>Evaluation</span>
+        <strong>{label}</strong>
+      </div>
+      <div className="evaluation-bar" aria-hidden="true">
+        <div className="evaluation-white" style={{ height: `${whitePercent}%` }} />
+        <div className="evaluation-marker" style={{ bottom: `${whitePercent}%` }} />
+      </div>
+      <div className="evaluation-labels">
+        <span>Black</span>
+        <span>White</span>
+      </div>
+    </section>
+  );
+}
+
+function HistoryPanel({
+  currentPly,
+  disabled,
+  moveHistory,
+  onJump,
+}: {
+  currentPly: number;
+  disabled: boolean;
+  moveHistory: MoveRecord[];
+  onJump: (ply: number) => void;
+}) {
+  return (
+    <section className="history-panel">
+      <div className="history-heading">
+        <h3>Move history</h3>
+        <span>
+          Ply {currentPly}/{moveHistory.length}
+        </span>
+      </div>
+      <div className="rewind-controls" aria-label="Replay controls">
+        <button className="secondary-button compact" type="button" disabled={disabled || currentPly === 0} onClick={() => onJump(0)}>
+          Start
+        </button>
+        <button className="secondary-button compact" type="button" disabled={disabled || currentPly === 0} onClick={() => onJump(currentPly - 1)}>
+          Prev
+        </button>
+        <button
+          className="secondary-button compact"
+          type="button"
+          disabled={disabled || currentPly >= moveHistory.length}
+          onClick={() => onJump(currentPly + 1)}
+        >
+          Next
+        </button>
+        <button
+          className="secondary-button compact"
+          type="button"
+          disabled={disabled || currentPly >= moveHistory.length}
+          onClick={() => onJump(moveHistory.length)}
+        >
+          Latest
+        </button>
+      </div>
+
+      {moveHistory.length === 0 ? (
+        <p>No moves yet.</p>
+      ) : (
+        <ol className="move-list">
+          {moveHistory.map((record) => (
+            <li key={record.id}>
+              <button
+                className={record.ply === currentPly ? "move-entry active" : "move-entry"}
+                disabled={disabled}
+                type="button"
+                onClick={() => onJump(record.ply)}
+              >
+                <span className="move-ply">{record.ply}.</span>
+                <span>{record.label}</span>
+                <span className="move-actor">{record.actor}</span>
+              </button>
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
   );
 }
 
@@ -312,4 +434,8 @@ function describeMove(piece: Piece | undefined, capturedPiece: Piece | undefined
 function cellLabel(position: Position, piece: Piece | undefined): string {
   const base = `Cell ${positionKey(position)}`;
   return piece ? `${base}, ${piece.color} ${piece.kind}` : base;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
 }

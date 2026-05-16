@@ -24,6 +24,15 @@ export type BoardState = {
 
 export const TURN_ORDER: readonly PieceColor[] = ["white", "black"];
 
+export const PIECE_VALUES: Record<PieceKind, number> = {
+  king: 200,
+  queen: 9,
+  rook: 5,
+  bishop: 3,
+  knight: 3,
+  pawn: 1,
+};
+
 export const PIECE_SYMBOLS: Record<PieceColor, Record<PieceKind, string>> = {
   white: {
     king: "♔",
@@ -117,6 +126,13 @@ export function legalMovesForColor(board: BoardState, color: PieceColor): Move[]
   return board.pieces
     .filter((piece) => piece.color === color)
     .flatMap((piece) => legalMovesForPiece(board, piece));
+}
+
+export function evaluateBoard(board: BoardState): number {
+  return board.pieces.reduce((score, piece) => {
+    const signedValue = piece.color === "white" ? PIECE_VALUES[piece.kind] : -PIECE_VALUES[piece.kind];
+    return score + signedValue;
+  }, 0);
 }
 
 export function applyMove(
