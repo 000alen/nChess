@@ -18,6 +18,8 @@ import {
   type BoardDimension,
   type BoardState,
   type Piece,
+  type PieceColor,
+  type PieceKind,
   type Position,
 } from "@/lib/chess";
 
@@ -54,7 +56,13 @@ type EngineStatus = Record<"white" | "black", {
 }>;
 
 type Theme = "dark" | "light";
+type PromotionKind = Exclude<PieceKind, "king" | "pawn">;
 const THEME_STORAGE_KEY = "nchess-theme";
+const BOARD_PRESETS: Array<{ label: string; config: BoardConfig }> = [
+  { label: "2D Classic", config: { dimension: 2, size: [8, 8] } },
+  { label: "3D Compact", config: { dimension: 3, size: [5, 5, 4] } },
+  { label: "4D Classic", config: DEFAULT_BOARD_CONFIG },
+];
 
 function getInitialTheme(): Theme {
   if (typeof window === "undefined") {
@@ -78,8 +86,10 @@ export function NChessBoard() {
   const [currentPly, setCurrentPly] = useState(0);
   const [theme, setTheme] = useState<Theme>(getInitialTheme);
   const [botEnabled, setBotEnabled] = useState(true);
+  const [botColor, setBotColor] = useState<PieceColor>("black");
   const [botDepth, setBotDepth] = useState(2);
   const [botTimeLimitMs, setBotTimeLimitMs] = useState(750);
+  const [promotionChoice, setPromotionChoice] = useState<PromotionKind>("queen");
   const [botThinking, setBotThinking] = useState(false);
   const [botError, setBotError] = useState<string | null>(null);
   const [hintMove, setHintMove] = useState<Move | null>(null);
@@ -101,7 +111,7 @@ export function NChessBoard() {
   const capturedPieces = useMemo(() => moveHistory.flatMap((record) => (
     record.capturedPiece ? [record.capturedPiece] : []
   )), [moveHistory]);
-  const canHumanMove = !botThinking && (!botEnabled || board.turn === "white");
+  const canHumanMove = !botThinking && (!botEnabled || board.turn !== botColor);
   const selectedMoves = legalMovesLoading ? [] : legalMoves;
 
   useEffect(() => {
@@ -298,6 +308,7 @@ export function NChessBoard() {
         body: JSON.stringify({
           board,
           move,
+          promotion: pieceAt(board, move.from)?.kind === "pawn" ? promotionChoice : undefined,
         }),
       });
       const payload = await response.json() as {
@@ -365,7 +376,7 @@ export function NChessBoard() {
   }
 
   async function requestBotMove(currentBoard: BoardState, basePly = currentPly) {
-    if (!botEnabled || currentBoard.turn !== "black") {
+    if (!botEnabled || currentBoard.turn !== botColor) {
       return;
     }
 
@@ -379,7 +390,7 @@ export function NChessBoard() {
         },
         body: JSON.stringify({
           board: currentBoard,
-          color: "black",
+          color: botColor,
           depth: botDepth,
           timeLimitMs: botTimeLimitMs,
         }),
@@ -451,11 +462,15 @@ export function NChessBoard() {
               <BoardSlice
                 key={slice.coordinates.join(",") || "2d"}
                 board={board}
+                canHumanMove={canHumanMove}
                 hintMove={hintMove}
                 slice={slice}
                 selectedMoves={selectedMoves}
                 selectedPosition={selectedPosition}
                 onCellClick={handleCellClick}
+                onDropMove={(from, to) => {
+                  void requestHumanMove({ from, to });
+                }}
               />
             ))}
           </div>
@@ -486,10 +501,16 @@ export function NChessBoard() {
             onChange={setDraftConfig}
           />
           <BotSettings
+            botColor={botColor}
             depth={botDepth}
+            onBotColorChange={setBotColor}
             timeLimitMs={botTimeLimitMs}
             onDepthChange={setBotDepth}
             onTimeLimitChange={setBotTimeLimitMs}
+          />
+          <PromotionSettings
+            promotionChoice={promotionChoice}
+            onPromotionChoiceChange={setPromotionChoice}
           />
 
           <div className="actions">
@@ -517,7 +538,7 @@ export function NChessBoard() {
             <button
               className="secondary-button"
               type="button"
-              disabled={botThinking || board.turn !== "black"}
+              disabled={botThinking || board.turn !== botColor}
               onClick={() => {
                 void requestBotMove(board, currentPly);
               }}
@@ -600,6 +621,18 @@ function BoardSetup({
           <option value={4}>4D</option>
         </select>
       </label>
+      <div className="preset-grid" aria-label="Board presets">
+        {BOARD_PRESETS.map((preset) => (
+          <button
+            className="secondary-button compact"
+            key={preset.label}
+            type="button"
+            onClick={() => onChange(normalizeBoardConfig(preset.config))}
+          >
+            {preset.label}
+          </button>
+        ))}
+      </div>
       <div className="axis-grid">
         {config.size.map((axisSize, axis) => (
           <label className="field" key={`axis-${axis}`}>
@@ -628,13 +661,17 @@ function BoardSetup({
 }
 
 function BotSettings({
+  botColor,
   depth,
   timeLimitMs,
+  onBotColorChange,
   onDepthChange,
   onTimeLimitChange,
 }: {
+  botColor: PieceColor;
   depth: number;
   timeLimitMs: number;
+  onBotColorChange: (color: PieceColor) => void;
   onDepthChange: (depth: number) => void;
   onTimeLimitChange: (timeLimitMs: number) => void;
 }) {
@@ -645,6 +682,13 @@ function BotSettings({
         <span>Timed search</span>
       </div>
       <div className="axis-grid">
+        <label className="field">
+          <span>Bot color</span>
+          <select value={botColor} onChange={(event) => onBotColorChange(event.target.value as PieceColor)}>
+            <option value="black">Black</option>
+            <option value="white">White</option>
+          </select>
+        </label>
         <label className="field">
           <span>Depth</span>
           <input
@@ -667,6 +711,35 @@ function BotSettings({
           />
         </label>
       </div>
+    </section>
+  );
+}
+
+function PromotionSettings({
+  promotionChoice,
+  onPromotionChoiceChange,
+}: {
+  promotionChoice: PromotionKind;
+  onPromotionChoiceChange: (kind: PromotionKind) => void;
+}) {
+  return (
+    <section className="setup-card" aria-label="Promotion settings">
+      <div className="setup-heading">
+        <h3>Promotion</h3>
+        <span>Choice</span>
+      </div>
+      <label className="field">
+        <span>Promote pawns to</span>
+        <select
+          value={promotionChoice}
+          onChange={(event) => onPromotionChoiceChange(event.target.value as PromotionKind)}
+        >
+          <option value="queen">Queen</option>
+          <option value="rook">Rook</option>
+          <option value="bishop">Bishop</option>
+          <option value="knight">Knight</option>
+        </select>
+      </label>
     </section>
   );
 }
@@ -816,18 +889,22 @@ function StatusLine({ status }: { status: EngineStatus["white"] }) {
 
 function BoardSlice({
   board,
+  canHumanMove,
   hintMove,
   slice,
   selectedMoves,
   selectedPosition,
   onCellClick,
+  onDropMove,
 }: {
   board: BoardState;
+  canHumanMove: boolean;
   hintMove: Move | null;
   slice: Slice;
   selectedMoves: Move[];
   selectedPosition: Position | null;
   onCellClick: (position: Position) => void | Promise<void>;
+  onDropMove: (from: Position, to: Position) => void;
 }) {
   const cells = [];
   const columns = board.size[0];
@@ -841,11 +918,13 @@ function BoardSlice({
         <BoardCell
           key={positionKey(position)}
           board={board}
+          canHumanMove={canHumanMove}
           hintMove={hintMove}
           position={position}
           selectedMoves={selectedMoves}
           selectedPosition={selectedPosition}
           onClick={onCellClick}
+          onDropMove={onDropMove}
         />,
       );
     }
@@ -907,18 +986,22 @@ function HintArrow({
 
 function BoardCell({
   board,
+  canHumanMove,
   hintMove,
   position,
   selectedMoves,
   selectedPosition,
   onClick,
+  onDropMove,
 }: {
   board: BoardState;
+  canHumanMove: boolean;
   hintMove: Move | null;
   position: Position;
   selectedMoves: Move[];
   selectedPosition: Position | null;
   onClick: (position: Position) => void | Promise<void>;
+  onDropMove: (from: Position, to: Position) => void;
 }) {
   const piece = pieceAt(board, position);
   const isSelected = Boolean(selectedPosition && positionsEqual(selectedPosition, position));
@@ -936,7 +1019,22 @@ function BoardCell({
         legalMove ? "legal" : "",
         isCapture ? "capture" : "",
       ].filter(Boolean).join(" ")}
+      draggable={Boolean(canHumanMove && piece?.color === board.turn)}
       type="button"
+      onDragOver={(event) => {
+        event.preventDefault();
+      }}
+      onDragStart={(event) => {
+        event.dataTransfer.setData("application/x-nchess-position", JSON.stringify(position));
+      }}
+      onDrop={(event) => {
+        event.preventDefault();
+        const rawPosition = event.dataTransfer.getData("application/x-nchess-position");
+        if (!rawPosition) {
+          return;
+        }
+        onDropMove(JSON.parse(rawPosition) as Position, position);
+      }}
       onClick={() => {
         void onClick(position);
       }}
