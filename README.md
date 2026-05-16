@@ -10,6 +10,10 @@ The current UI is a Next.js App Router application. It ports the 4D demo board
 to a browser UI while keeping the Python implementation in the repository as a
 reference engine/model.
 
+The browser can also play against the Python engine through the Vercel
+serverless function at `/api/bot`. The deployed app defaults to human White
+against bot Black, with a toggle for manual play.
+
 Dependency installs use pnpm with a repository-level minimum release age policy
 (`minimum-release-age=10080`, seven days) in `.npmrc`.
 
@@ -24,6 +28,13 @@ Useful checks:
 pnpm typecheck
 pnpm build
 python3 -m unittest discover -s tests -v
+```
+
+The legacy Kivy desktop GUI is optional and is intentionally kept out of the
+serverless dependency path:
+
+```bash
+python3 -m pip install -r requirements-gui.txt
 ```
 
 # Rules

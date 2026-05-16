@@ -26,34 +26,46 @@ export function NChessBoard() {
   const [board, setBoard] = useState<BoardState>(() => createInitialBoard());
   const [selectedPosition, setSelectedPosition] = useState<Position | null>(null);
   const [history, setHistory] = useState<string[]>([]);
+  const [botEnabled, setBotEnabled] = useState(true);
+  const [botThinking, setBotThinking] = useState(false);
+  const [botError, setBotError] = useState<string | null>(null);
 
   const selectedPiece = selectedPosition ? pieceAt(board, selectedPosition) : undefined;
+  const canHumanMove = !botThinking && (!botEnabled || board.turn === "white");
   const selectedMoves = useMemo(() => {
-    if (!selectedPiece || selectedPiece.color !== board.turn) {
+    if (!canHumanMove || !selectedPiece || selectedPiece.color !== board.turn) {
       return [];
     }
     return legalMovesForPiece(board, selectedPiece);
-  }, [board, selectedPiece]);
+  }, [board, canHumanMove, selectedPiece]);
 
   function resetGame() {
     setBoard(createInitialBoard());
     setSelectedPosition(null);
     setHistory([]);
+    setBotError(null);
+    setBotThinking(false);
   }
 
-  function handleCellClick(position: Position) {
+  async function handleCellClick(position: Position) {
+    if (!canHumanMove) {
+      return;
+    }
+
     const clickedPiece = pieceAt(board, position);
     const matchingMove = selectedMoves.find((move) => positionsEqual(move.to, position));
 
     if (matchingMove) {
       const movingPiece = pieceAt(board, matchingMove.from);
       const capturedPiece = pieceAt(board, matchingMove.to);
-      setBoard((currentBoard) => applyMove(currentBoard, matchingMove));
+      const nextBoard = applyMove(board, matchingMove);
+      setBoard(nextBoard);
       setSelectedPosition(null);
       setHistory((moves) => [
         describeMove(movingPiece, capturedPiece, matchingMove),
         ...moves,
       ].slice(0, 12));
+      await requestBotMove(nextBoard);
       return;
     }
 
@@ -63,6 +75,55 @@ export function NChessBoard() {
     }
 
     setSelectedPosition(null);
+  }
+
+  async function requestBotMove(currentBoard: BoardState) {
+    if (!botEnabled || currentBoard.turn !== "black") {
+      return;
+    }
+
+    setBotThinking(true);
+    setBotError(null);
+    try {
+      const response = await fetch("/api/bot", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          board: currentBoard,
+          color: "black",
+          depth: 1,
+        }),
+      });
+
+      const payload = await response.json() as {
+        move?: Move | null;
+        error?: string;
+        detail?: string;
+      };
+      if (!response.ok) {
+        throw new Error(payload.detail ?? payload.error ?? "Bot request failed");
+      }
+      if (!payload.move) {
+        setHistory((moves) => ["black bot has no legal move", ...moves].slice(0, 12));
+        return;
+      }
+
+      const botMove = payload.move;
+      const movingPiece = pieceAt(currentBoard, botMove.from);
+      const capturedPiece = pieceAt(currentBoard, botMove.to);
+      const nextBoard = applyMove(currentBoard, botMove);
+      setBoard(nextBoard);
+      setHistory((moves) => [
+        `${describeMove(movingPiece, capturedPiece, botMove)} (bot)`,
+        ...moves,
+      ].slice(0, 12));
+    } catch (error) {
+      setBotError(error instanceof Error ? error.message : "Bot request failed");
+    } finally {
+      setBotThinking(false);
+    }
   }
 
   return (
@@ -97,8 +158,9 @@ export function NChessBoard() {
           <h2>Game state</h2>
           <div className="status">
             <span>Turn</span>
-            <div className="turn">{board.turn}</div>
+            <div className="turn">{botThinking ? "Bot thinking..." : board.turn}</div>
           </div>
+          {botError ? <p className="bot-error">{botError}</p> : null}
 
           <div className="actions">
             <button className="primary-button" type="button" onClick={resetGame}>
@@ -107,6 +169,25 @@ export function NChessBoard() {
             <button
               className="secondary-button"
               type="button"
+              aria-pressed={botEnabled}
+              onClick={() => setBotEnabled((enabled) => !enabled)}
+            >
+              Bot {botEnabled ? "on" : "off"}
+            </button>
+            <button
+              className="secondary-button"
+              type="button"
+              disabled={botThinking || board.turn !== "black"}
+              onClick={() => {
+                void requestBotMove(board);
+              }}
+            >
+              Bot move
+            </button>
+            <button
+              className="secondary-button"
+              type="button"
+              disabled={botThinking}
               onClick={() => setBoard((currentBoard) => ({ ...currentBoard, turn: nextTurn(currentBoard.turn) }))}
             >
               Pass turn
@@ -140,7 +221,7 @@ function BoardSlice({
   slice: Slice;
   selectedMoves: Move[];
   selectedPosition: Position | null;
-  onCellClick: (position: Position) => void;
+  onCellClick: (position: Position) => void | Promise<void>;
 }) {
   const cells = [];
 
@@ -182,7 +263,7 @@ function BoardCell({
   position: Position;
   selectedMoves: Move[];
   selectedPosition: Position | null;
-  onClick: (position: Position) => void;
+  onClick: (position: Position) => void | Promise<void>;
 }) {
   const piece = pieceAt(board, position);
   const isSelected = Boolean(selectedPosition && positionsEqual(selectedPosition, position));
@@ -201,7 +282,9 @@ function BoardCell({
         isCapture ? "capture" : "",
       ].filter(Boolean).join(" ")}
       type="button"
-      onClick={() => onClick(position)}
+      onClick={() => {
+        void onClick(position);
+      }}
     >
       {piece ? (
         <span className={`piece ${piece.color}`}>{PIECE_SYMBOLS[piece.color][piece.kind]}</span>

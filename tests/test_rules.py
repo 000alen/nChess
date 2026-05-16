@@ -1,6 +1,7 @@
 import unittest
 from pathlib import Path
 
+from api.bot import choose_bot_move
 from nChess.Engine import best_move, classic_evaluate, doubled_pawns, find_best_move, legal_moves
 from nChess.GUI.geometry import (
     board_coordinates_for_indices,
@@ -123,6 +124,27 @@ class IntegrationSmokeTests(unittest.TestCase):
         board = Board()
 
         self.assertTrue(Path(to_PNG(board.get((3, 0)))).is_file())
+
+    def test_bot_api_returns_engine_move(self):
+        payload = {
+            "board": {
+                "dimension": 2,
+                "size": [8, 8],
+                "turn": "white",
+                "pieces": [
+                    {"kind": "king", "color": "white", "position": [7, 7], "hasMoved": False},
+                    {"kind": "king", "color": "black", "position": [7, 0], "hasMoved": False},
+                    {"kind": "rook", "color": "white", "position": [0, 0], "hasMoved": False},
+                    {"kind": "queen", "color": "black", "position": [0, 5], "hasMoved": False},
+                ],
+            },
+            "color": "white",
+            "depth": 1,
+        }
+
+        response = choose_bot_move(payload)
+
+        self.assertEqual(response["move"], {"from": [0, 0], "to": [0, 5]})
 
 
 class EngineSearchTests(unittest.TestCase):
