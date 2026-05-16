@@ -193,6 +193,16 @@ button {
   z-index: 2;
 }
 
+.cell.hint-from {
+  box-shadow: inset 0 0 0 4px rgba(129, 182, 76, 0.98);
+  z-index: 2;
+}
+
+.cell.hint-to {
+  box-shadow: inset 0 0 0 4px rgba(255, 204, 51, 0.98);
+  z-index: 2;
+}
+
 .cell.legal::after,
 .cell.capture::after {
   content: "";
@@ -425,6 +435,25 @@ button {
   color: var(--text);
   font-size: 0.88rem;
   padding: 10px;
+}
+
+.hint-error,
+.hint-line {
+  border: 1px solid var(--border);
+  font-size: 0.88rem;
+  margin: -4px 0 12px;
+  padding: 10px;
+}
+
+.hint-error {
+  background: color-mix(in srgb, var(--danger) 16%, var(--surface));
+  color: var(--text);
+}
+
+.hint-line {
+  background: color-mix(in srgb, var(--brand) 18%, var(--surface));
+  color: var(--text);
+  font-weight: 800;
 }
 
 .history-panel {

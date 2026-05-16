@@ -73,6 +73,9 @@ export function NChessBoard() {
   const [botEnabled, setBotEnabled] = useState(true);
   const [botThinking, setBotThinking] = useState(false);
   const [botError, setBotError] = useState<string | null>(null);
+  const [hintMove, setHintMove] = useState<Move | null>(null);
+  const [hintThinking, setHintThinking] = useState(false);
+  const [hintError, setHintError] = useState<string | null>(null);
   const [engineEvaluation, setEngineEvaluation] = useState<EngineEvaluation>({
     loading: true,
     score: null,
@@ -150,6 +153,7 @@ export function NChessBoard() {
     setCurrentPly(0);
     setBotError(null);
     setBotThinking(false);
+    clearHint();
   }
 
   function commitMove(currentBoard: BoardState, move: Move, actor: MoveActor, basePly: number): BoardState {
@@ -170,6 +174,7 @@ export function NChessBoard() {
     setBoard(nextBoard);
     setMoveHistory((records) => [...records.slice(0, basePly), record]);
     setCurrentPly(record.ply);
+    clearHint();
     return nextBoard;
   }
 
@@ -184,6 +189,7 @@ export function NChessBoard() {
     setCurrentPly(boundedPly);
     setSelectedPosition(null);
     setBotError(null);
+    clearHint();
   }
 
   async function handleCellClick(position: Position) {
@@ -207,6 +213,50 @@ export function NChessBoard() {
     }
 
     setSelectedPosition(null);
+    clearHint();
+  }
+
+  function clearHint() {
+    setHintMove(null);
+    setHintError(null);
+    setHintThinking(false);
+  }
+
+  async function requestHint() {
+    setHintThinking(true);
+    setHintError(null);
+    try {
+      const response = await fetch("/api/bot", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          board,
+          color: board.turn,
+          depth: 1,
+        }),
+      });
+      const payload = await response.json() as {
+        move?: Move | null;
+        error?: string;
+        detail?: string;
+      };
+
+      if (!response.ok) {
+        throw new Error(payload.detail ?? payload.error ?? "Hint request failed");
+      }
+      if (!payload.move) {
+        setHintMove(null);
+        setHintError("No legal hint available.");
+        return;
+      }
+      setHintMove(payload.move);
+    } catch (error) {
+      setHintError(error instanceof Error ? error.message : "Hint request failed");
+    } finally {
+      setHintThinking(false);
+    }
   }
 
   async function requestBotMove(currentBoard: BoardState, basePly = currentPly) {
@@ -275,6 +325,7 @@ export function NChessBoard() {
               <BoardSlice
                 key={slice.coordinates.join(",") || "2d"}
                 board={board}
+                hintMove={hintMove}
                 slice={slice}
                 selectedMoves={selectedMoves}
                 selectedPosition={selectedPosition}
@@ -321,6 +372,16 @@ export function NChessBoard() {
             <button
               className="secondary-button"
               type="button"
+              disabled={hintThinking || botThinking}
+              onClick={() => {
+                void requestHint();
+              }}
+            >
+              {hintThinking ? "Hint..." : "Hint"}
+            </button>
+            <button
+              className="secondary-button"
+              type="button"
               disabled={botThinking || board.turn !== "black"}
               onClick={() => {
                 void requestBotMove(board, currentPly);
@@ -339,6 +400,12 @@ export function NChessBoard() {
               Pass turn
             </button>
           </div>
+          {hintError ? <p className="hint-error">{hintError}</p> : null}
+          {hintMove ? (
+            <p className="hint-line">
+              Hint: {positionKey(hintMove.from)} → {positionKey(hintMove.to)}
+            </p>
+          ) : null}
 
           <HistoryPanel
             currentPly={currentPly}
@@ -530,12 +597,14 @@ function HistoryPanel({
 
 function BoardSlice({
   board,
+  hintMove,
   slice,
   selectedMoves,
   selectedPosition,
   onCellClick,
 }: {
   board: BoardState;
+  hintMove: Move | null;
   slice: Slice;
   selectedMoves: Move[];
   selectedPosition: Position | null;
@@ -552,6 +621,7 @@ function BoardSlice({
         <BoardCell
           key={positionKey(position)}
           board={board}
+          hintMove={hintMove}
           position={position}
           selectedMoves={selectedMoves}
           selectedPosition={selectedPosition}
@@ -578,12 +648,14 @@ function BoardSlice({
 
 function BoardCell({
   board,
+  hintMove,
   position,
   selectedMoves,
   selectedPosition,
   onClick,
 }: {
   board: BoardState;
+  hintMove: Move | null;
   position: Position;
   selectedMoves: Move[];
   selectedPosition: Position | null;
@@ -593,6 +665,8 @@ function BoardCell({
   const isSelected = Boolean(selectedPosition && positionsEqual(selectedPosition, position));
   const legalMove = selectedMoves.find((move) => positionsEqual(move.to, position));
   const isCapture = Boolean(legalMove && piece && piece.color !== board.turn);
+  const isHintFrom = Boolean(hintMove && positionsEqual(hintMove.from, position));
+  const isHintTo = Boolean(hintMove && positionsEqual(hintMove.to, position));
   const shade = (position[0] + position[1]) % 2 === 0 ? "dark" : "light";
 
   return (
@@ -604,6 +678,8 @@ function BoardCell({
         isSelected ? "selected" : "",
         legalMove ? "legal" : "",
         isCapture ? "capture" : "",
+        isHintFrom ? "hint-from" : "",
+        isHintTo ? "hint-to" : "",
       ].filter(Boolean).join(" ")}
       type="button"
       onClick={() => {
