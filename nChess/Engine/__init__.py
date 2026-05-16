@@ -39,6 +39,21 @@ class SearchResult:
     elapsed_ms: float = 0
 
 
+@dataclass
+class SearchContext:
+    started_at: float
+    deadline_ms: int | None = None
+    transpositions: dict[tuple[tuple, Color, int], tuple[float, Move | None]] = None
+
+    def __post_init__(self):
+        if self.transpositions is None:
+            self.transpositions = {}
+
+
+class SearchTimeout(Exception):
+    pass
+
+
 def pawns(board: nBoard, color: Color) -> tuple[Pawn, ...]:
     return tuple(
         piece
@@ -270,6 +285,14 @@ def ordered_legal_moves(board: nBoard, color: Color = None) -> tuple[Move, ...]:
     )
 
 
+def tactical_moves(board: nBoard, color: Color = None) -> tuple[Move, ...]:
+    return tuple(
+        move
+        for move in ordered_legal_moves(board, color)
+        if board.contains(move.final_position) or promotes_after_move(board, move)
+    )
+
+
 def assume_engine_move(board: nBoard, move: Move) -> nBoard:
     return board.assume_move(move, force=board.current_turn() is None)
 
@@ -289,13 +312,22 @@ def negamax(
     alpha: float = -inf,
     beta: float = inf,
     ply: int = 0,
+    context: SearchContext = None,
 ) -> tuple[float, int]:
+    check_deadline(context)
     if board.in_checkmate(color):
         return -MATE_SCORE + ply, 1
     if board.in_stalemate(color):
         return DRAW_SCORE, 1
     if depth == 0:
-        return evaluator(board, color), 1
+        if board.dimension > 2:
+            return evaluator(board, color), 1
+        return quiescence(board, color, evaluator, alpha, beta, 2, context)
+
+    cache_key = (position_key(board), color, depth)
+    if context is not None and cache_key in context.transpositions:
+        cached_score, _cached_move = context.transpositions[cache_key]
+        return cached_score, 1
 
     moves = ordered_legal_moves(board, color)
     if len(moves) == 0:
@@ -314,6 +346,7 @@ def negamax(
             -beta,
             -alpha,
             ply + 1,
+            context,
         )
         score = -score
         nodes += child_nodes
@@ -324,7 +357,41 @@ def negamax(
         if alpha >= beta:
             break
 
+    if context is not None:
+        context.transpositions[cache_key] = (best_score, None)
     return best_score, nodes
+
+
+def quiescence(
+    board: nBoard,
+    color: Color,
+    evaluator: Evaluator,
+    alpha: float,
+    beta: float,
+    depth: int,
+    context: SearchContext = None,
+) -> tuple[float, int]:
+    check_deadline(context)
+    stand_pat = evaluator(board, color)
+    nodes = 1
+
+    if depth == 0:
+        return stand_pat, nodes
+    if stand_pat >= beta:
+        return beta, nodes
+    alpha = max(alpha, stand_pat)
+
+    for move in tactical_moves(board, color):
+        child = assume_engine_move(board, move)
+        child_color = next_search_color(child, color)
+        score, child_nodes = quiescence(child, child_color, evaluator, -beta, -alpha, depth - 1, context)
+        score = -score
+        nodes += child_nodes
+        if score >= beta:
+            return beta, nodes
+        alpha = max(alpha, score)
+
+    return alpha, nodes
 
 
 def find_best_move(
@@ -332,6 +399,7 @@ def find_best_move(
     depth: int = 2,
     color: Color = None,
     evaluator: Evaluator = evaluate_position,
+    context: SearchContext = None,
 ) -> SearchResult:
     if depth < 1:
         raise ValueError("depth must be at least 1")
@@ -349,17 +417,24 @@ def find_best_move(
     beta = inf
 
     for move in moves:
+        check_deadline(context)
         child = assume_engine_move(board, move)
         child_color = next_search_color(child, color)
-        score, child_nodes = negamax(
-            child,
-            depth - 1,
-            child_color,
-            evaluator,
-            -beta,
-            -alpha,
-            1,
-        )
+        try:
+            score, child_nodes = negamax(
+                child,
+                depth - 1,
+                child_color,
+                evaluator,
+                -beta,
+                -alpha,
+                1,
+                context,
+            )
+        except SearchTimeout:
+            if best_move is not None:
+                return SearchResult(best_move, best_score, depth, nodes, elapsed_ms(context.started_at))
+            raise
         score = -score
         nodes += child_nodes
 
@@ -379,6 +454,7 @@ def iterative_deepening(
     time_limit_ms: int = 750,
 ) -> SearchResult:
     start = perf_counter()
+    context = SearchContext(start, time_limit_ms)
     max_depth = max(1, max_depth)
     best_result = None
 
@@ -386,7 +462,20 @@ def iterative_deepening(
         if elapsed_ms(start) >= time_limit_ms and best_result is not None:
             break
 
-        result = find_best_move(board, depth, color, evaluator)
+        try:
+            result = find_best_move(board, depth, color, evaluator, context)
+        except SearchTimeout:
+            if best_result is None:
+                fallback_color = current_or_requested_color(board, color)
+                moves = ordered_legal_moves(board, fallback_color)
+                return SearchResult(
+                    moves[0] if len(moves) else None,
+                    evaluator(board, fallback_color) if len(moves) else DRAW_SCORE,
+                    0,
+                    1,
+                    elapsed_ms(start),
+                )
+            break
         best_result = SearchResult(
             result.move,
             result.score,
@@ -411,3 +500,28 @@ def best_move(
 
 def elapsed_ms(start):
     return round((perf_counter() - start) * 1000, 2)
+
+
+def check_deadline(context: SearchContext | None):
+    if context is None or context.deadline_ms is None:
+        return
+    if elapsed_ms(context.started_at) >= context.deadline_ms:
+        raise SearchTimeout()
+
+
+def position_key(board: nBoard) -> tuple:
+    return (
+        board.dimension,
+        board.size,
+        board.current_turn(),
+        tuple(sorted(
+            (
+                type(piece).__name__,
+                piece.color,
+                piece.position,
+                piece.has_moved,
+                getattr(piece, "capture_axis", None),
+            )
+            for piece in board.pieces
+        )),
+    )
