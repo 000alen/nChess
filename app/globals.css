@@ -457,7 +457,7 @@ button {
   cursor: pointer;
   display: grid;
   gap: 8px;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   padding: 8px;
   text-align: left;
   width: 100%;
@@ -475,9 +475,21 @@ button {
 }
 
 .move-ply,
-.move-actor {
+.move-actor,
+.move-eval {
   color: var(--brand);
   font-weight: 900;
+}
+
+.move-meta {
+  align-items: end;
+  display: grid;
+  gap: 3px;
+  justify-items: end;
+}
+
+.move-eval {
+  font-variant-numeric: tabular-nums;
 }
 
 .move-actor {

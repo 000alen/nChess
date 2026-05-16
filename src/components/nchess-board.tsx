@@ -34,6 +34,8 @@ type MoveRecord = {
   id: string;
   actor: MoveActor;
   board: BoardState;
+  evaluation: number;
+  evaluationSource: "engine" | "local";
   label: string;
   move: Move;
   ply: number;
@@ -111,7 +113,13 @@ export function NChessBoard() {
         if (!response.ok || typeof payload.whiteScore !== "number") {
           throw new Error("Evaluation request failed");
         }
-        setEngineEvaluation({ loading: false, score: payload.whiteScore });
+        const whiteScore = payload.whiteScore;
+        setEngineEvaluation({ loading: false, score: whiteScore });
+        setMoveHistory((records) => records.map((record) => (
+          sameBoard(record.board, board)
+            ? { ...record, evaluation: whiteScore, evaluationSource: "engine" }
+            : record
+        )));
       } catch (error) {
         if (!controller.signal.aborted) {
           setEngineEvaluation({ loading: false, score: null });
@@ -151,6 +159,8 @@ export function NChessBoard() {
     const record: MoveRecord = {
       actor,
       board: nextBoard,
+      evaluation: evaluateBoard(nextBoard),
+      evaluationSource: "local",
       id: `${basePly + 1}-${positionKey(move.from)}-${positionKey(move.to)}`,
       label: describeMove(movingPiece, capturedPiece, move),
       move,
@@ -505,7 +515,10 @@ function HistoryPanel({
               >
                 <span className="move-ply">{record.ply}.</span>
                 <span>{record.label}</span>
-                <span className="move-actor">{record.actor}</span>
+                <span className="move-meta">
+                  <span className="move-eval">{formatScore(record.evaluation)}</span>
+                  <span className="move-actor">{record.actor}</span>
+                </span>
               </button>
             </li>
           ))}
@@ -649,6 +662,28 @@ function describeMove(piece: Piece | undefined, capturedPiece: Piece | undefined
   const actor = piece ? `${piece.color} ${piece.kind}` : "piece";
   const capture = capturedPiece ? ` captures ${capturedPiece.color} ${capturedPiece.kind}` : "";
   return `${actor}${capture}: ${positionKey(move.from)} → ${positionKey(move.to)}`;
+}
+
+function sameBoard(left: BoardState, right: BoardState): boolean {
+  return (
+    left.turn === right.turn
+    && left.dimension === right.dimension
+    && positionsEqual(left.size, right.size)
+    && left.pieces.length === right.pieces.length
+    && left.pieces.every((piece, index) => {
+      const other = right.pieces[index];
+      return Boolean(other)
+        && piece.id === other.id
+        && piece.kind === other.kind
+        && piece.color === other.color
+        && piece.hasMoved === other.hasMoved
+        && positionsEqual(piece.position, other.position);
+    })
+  );
+}
+
+function formatScore(score: number): string {
+  return `${score >= 0 ? "+" : ""}${score.toFixed(1)}`;
 }
 
 function cellLabel(position: Position, piece: Piece | undefined): string {
