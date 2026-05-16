@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import {
   applyMove,
@@ -34,6 +34,11 @@ type MoveRecord = {
   ply: number;
 };
 
+type EngineEvaluation = {
+  loading: boolean;
+  score: number | null;
+};
+
 export function NChessBoard() {
   const [board, setBoard] = useState<BoardState>(() => createInitialBoard());
   const [selectedPosition, setSelectedPosition] = useState<Position | null>(null);
@@ -42,8 +47,13 @@ export function NChessBoard() {
   const [botEnabled, setBotEnabled] = useState(true);
   const [botThinking, setBotThinking] = useState(false);
   const [botError, setBotError] = useState<string | null>(null);
+  const [engineEvaluation, setEngineEvaluation] = useState<EngineEvaluation>({
+    loading: true,
+    score: null,
+  });
 
-  const evaluation = useMemo(() => evaluateBoard(board), [board]);
+  const fallbackEvaluation = useMemo(() => evaluateBoard(board), [board]);
+  const evaluation = engineEvaluation.score ?? fallbackEvaluation;
   const selectedPiece = selectedPosition ? pieceAt(board, selectedPosition) : undefined;
   const canHumanMove = !botThinking && (!botEnabled || board.turn === "white");
   const selectedMoves = useMemo(() => {
@@ -52,6 +62,43 @@ export function NChessBoard() {
     }
     return legalMovesForPiece(board, selectedPiece);
   }, [board, canHumanMove, selectedPiece]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setEngineEvaluation((current) => ({ ...current, loading: true }));
+
+    async function loadEvaluation() {
+      try {
+        const response = await fetch("/api/evaluate", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            board,
+            color: "white",
+          }),
+          signal: controller.signal,
+        });
+        const payload = await response.json() as {
+          whiteScore?: number;
+        };
+
+        if (!response.ok || typeof payload.whiteScore !== "number") {
+          throw new Error("Evaluation request failed");
+        }
+        setEngineEvaluation({ loading: false, score: payload.whiteScore });
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          setEngineEvaluation({ loading: false, score: null });
+        }
+      }
+    }
+
+    void loadEvaluation();
+
+    return () => controller.abort();
+  }, [board]);
 
   function resetGame() {
     setBoard(createInitialBoard());
@@ -193,7 +240,11 @@ export function NChessBoard() {
             <span>Turn</span>
             <div className="turn">{botThinking ? "Bot thinking..." : board.turn}</div>
           </div>
-          <EvaluationBar score={evaluation} />
+          <EvaluationBar
+            loading={engineEvaluation.loading}
+            score={evaluation}
+            source={engineEvaluation.score === null ? "local" : "engine"}
+          />
           {botError ? <p className="bot-error">{botError}</p> : null}
 
           <div className="actions">
@@ -242,7 +293,15 @@ export function NChessBoard() {
   );
 }
 
-function EvaluationBar({ score }: { score: number }) {
+function EvaluationBar({
+  loading,
+  score,
+  source,
+}: {
+  loading: boolean;
+  score: number;
+  source: "engine" | "local";
+}) {
   const whitePercent = clamp(50 + score * 4, 4, 96);
   const label = `${score >= 0 ? "+" : ""}${score.toFixed(1)}`;
 
@@ -250,8 +309,11 @@ function EvaluationBar({ score }: { score: number }) {
     <section className="evaluation-card" aria-label={`Evaluation ${label}`}>
       <div className="evaluation-heading">
         <span>Evaluation</span>
-        <strong>{label}</strong>
+        <strong>{loading ? `${label} …` : label}</strong>
       </div>
+      <p className="evaluation-source">
+        {source === "engine" ? "Python engine score" : "Local material fallback"}
+      </p>
       <div className="evaluation-bar" aria-hidden="true">
         <div className="evaluation-white" style={{ height: `${whitePercent}%` }} />
         <div className="evaluation-marker" style={{ bottom: `${whitePercent}%` }} />

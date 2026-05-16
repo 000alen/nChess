@@ -287,6 +287,12 @@ button {
   font-size: 1.1rem;
 }
 
+.evaluation-source {
+  color: var(--muted);
+  font-size: 0.78rem;
+  margin: -0.25rem 0 0;
+}
+
 .evaluation-bar {
   background: #050505;
   border: 1px solid var(--border);

@@ -105,6 +105,10 @@ def mobility(board, color) -> int:
     return sum(len(piece.moves()) for piece in board.pieces if piece.color == color)
 
 
+def pseudo_mobility(board, color) -> int:
+    return sum(len(piece.all_moves()) for piece in board.pieces if piece.color == color)
+
+
 def colors(board: nBoard) -> tuple[Color, ...]:
     seen = []
     for piece in board.pieces:
@@ -138,12 +142,69 @@ def evaluate_position(board: nBoard, color: Color) -> float:
         - 0.5 * (doubled_pawns(board, color) - doubled_pawns(board, rival_color))
         - 0.5 * (blocked_pawns(board, color) - blocked_pawns(board, rival_color))
         - 0.5 * (isolated_pawns(board, color) - isolated_pawns(board, rival_color))
-        + 0.1 * (mobility(board, color) - mobility(board, rival_color))
+        + 0.04 * (pseudo_mobility(board, color) - pseudo_mobility(board, rival_color))
+        + 0.3 * (pawn_advancement(board, color) - pawn_advancement(board, rival_color))
+        + 0.08 * (centrality(board, color) - centrality(board, rival_color))
+        + 0.06 * (attack_pressure(board, color) - attack_pressure(board, rival_color))
+        + king_safety(board, color, rival_color)
     )
 
 
 def classic_evaluate(board: Board, color: ClassicColor) -> float:
     return evaluate_position(board, color)
+
+
+def pawn_advancement(board: nBoard, color: Color) -> float:
+    score = 0
+    for pawn in pawns(board, color):
+        for axis in range(board.dimension):
+            if axis == pawn.capture_axis or board.size[axis] <= 1:
+                continue
+
+            if pawn.direction == 1:
+                score += pawn.position[axis] / (board.size[axis] - 1)
+            else:
+                score += (board.size[axis] - 1 - pawn.position[axis]) / (board.size[axis] - 1)
+    return score
+
+
+def centrality(board: nBoard, color: Color) -> float:
+    score = 0
+    for piece in board.pieces:
+        if piece.color != color:
+            continue
+
+        for axis, coordinate in enumerate(piece.position):
+            if board.size[axis] <= 1:
+                continue
+
+            center = (board.size[axis] - 1) / 2
+            score += 1 - (abs(coordinate - center) / max(center, 1))
+    return score
+
+
+def attack_pressure(board: nBoard, color: Color) -> float:
+    attacked_positions = {
+        move.final_position
+        for piece in board.pieces
+        if piece.color == color
+        for move in piece.all_moves()
+    }
+
+    return sum(
+        piece_value(piece)
+        for piece in board.pieces
+        if piece.color != color and type(piece) is not King and piece.position in attacked_positions
+    )
+
+
+def king_safety(board: nBoard, color: Color, rival_color: Color) -> float:
+    score = 0
+    if board.in_check(color):
+        score -= 1.5
+    if board.in_check(rival_color):
+        score += 1.5
+    return score
 
 
 def current_or_requested_color(board: nBoard, color: Color = None) -> Color:

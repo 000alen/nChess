@@ -2,7 +2,7 @@ import json
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler
 
-from nChess.Engine import blocked_pawns, doubled_pawns, find_best_move, isolated_pawns, material, opponent_color
+from nChess.Engine import evaluate_position, find_best_move
 from nChess.Piece.Bishop import Bishop
 from nChess.Piece.King import King
 from nChess.Piece.Knight import Knight
@@ -69,10 +69,10 @@ def choose_bot_move(request):
         raise ValueError("color must be 'white' or 'black'")
 
     depth = int(request.get("depth", 1))
-    depth = max(1, min(depth, 2))
+    depth = max(1, min(depth, 1))
 
     board = build_board(board_payload)
-    result = find_best_move(board, depth=depth, color=COLORS[color_name], evaluator=bot_evaluate)
+    result = find_best_move(board, depth=depth, color=COLORS[color_name], evaluator=evaluate_position)
 
     return {
         "move": serialize_move(result.move),
@@ -132,13 +132,3 @@ def serialize_move(move):
         "from": list(move.initial_position),
         "to": list(move.final_position),
     }
-
-
-def bot_evaluate(board, color):
-    rival_color = opponent_color(board, color)
-    return (
-        material(board, color, rival_color)
-        - 0.25 * (doubled_pawns(board, color) - doubled_pawns(board, rival_color))
-        - 0.25 * (blocked_pawns(board, color) - blocked_pawns(board, rival_color))
-        - 0.25 * (isolated_pawns(board, color) - isolated_pawns(board, rival_color))
-    )

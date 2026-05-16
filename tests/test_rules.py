@@ -2,7 +2,8 @@ import unittest
 from pathlib import Path
 
 from api.bot import choose_bot_move
-from nChess.Engine import best_move, classic_evaluate, doubled_pawns, find_best_move, legal_moves
+from api.evaluate import evaluate_request
+from nChess.Engine import best_move, classic_evaluate, doubled_pawns, evaluate_position, find_best_move, legal_moves
 from nChess.GUI.geometry import (
     board_coordinates_for_indices,
     board_grid_size,
@@ -112,6 +113,14 @@ class IntegrationSmokeTests(unittest.TestCase):
     def test_engine_evaluates_classic_board(self):
         self.assertEqual(classic_evaluate(Board(), ClassicColor.white), 0)
 
+    def test_rich_evaluation_rewards_activity(self):
+        board = Board()
+        before = evaluate_position(board, ClassicColor.white)
+
+        board.move(Move((0, 1), (0, 3)))
+
+        self.assertNotEqual(evaluate_position(board, ClassicColor.white), before)
+
     def test_doubled_pawns_count_extra_pawns_on_same_file(self):
         board = nBoard(2, (8, 8), turn_order=(ClassicColor.white, ClassicColor.black))
         board.add(Pawn, (0, 1), ClassicColor.white)
@@ -145,6 +154,27 @@ class IntegrationSmokeTests(unittest.TestCase):
         response = choose_bot_move(payload)
 
         self.assertEqual(response["move"], {"from": [0, 0], "to": [0, 5]})
+
+    def test_evaluate_api_returns_white_score(self):
+        payload = {
+            "board": {
+                "dimension": 2,
+                "size": [8, 8],
+                "turn": "white",
+                "pieces": [
+                    {"kind": "king", "color": "white", "position": [7, 7], "hasMoved": False},
+                    {"kind": "king", "color": "black", "position": [7, 0], "hasMoved": False},
+                    {"kind": "rook", "color": "white", "position": [0, 0], "hasMoved": False},
+                    {"kind": "queen", "color": "black", "position": [0, 5], "hasMoved": False},
+                ],
+            },
+            "color": "white",
+        }
+
+        response = evaluate_request(payload)
+
+        self.assertIn("whiteScore", response)
+        self.assertIsInstance(response["whiteScore"], float)
 
 
 class EngineSearchTests(unittest.TestCase):
