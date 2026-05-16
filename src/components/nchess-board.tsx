@@ -40,13 +40,27 @@ type EngineEvaluation = {
 };
 
 type Theme = "dark" | "light";
+const THEME_STORAGE_KEY = "nchess-theme";
+
+function getInitialTheme(): Theme {
+  if (typeof window === "undefined") {
+    return "dark";
+  }
+
+  const savedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
+  if (savedTheme === "dark" || savedTheme === "light") {
+    return savedTheme;
+  }
+
+  return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+}
 
 export function NChessBoard() {
   const [board, setBoard] = useState<BoardState>(() => createInitialBoard());
   const [selectedPosition, setSelectedPosition] = useState<Position | null>(null);
   const [moveHistory, setMoveHistory] = useState<MoveRecord[]>([]);
   const [currentPly, setCurrentPly] = useState(0);
-  const [theme, setTheme] = useState<Theme>("dark");
+  const [theme, setTheme] = useState<Theme>(getInitialTheme);
   const [botEnabled, setBotEnabled] = useState(true);
   const [botThinking, setBotThinking] = useState(false);
   const [botError, setBotError] = useState<string | null>(null);
@@ -102,6 +116,10 @@ export function NChessBoard() {
 
     return () => controller.abort();
   }, [board]);
+
+  useEffect(() => {
+    window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+  }, [theme]);
 
   function resetGame() {
     setBoard(createInitialBoard());
