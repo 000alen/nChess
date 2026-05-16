@@ -131,7 +131,7 @@ button {
 .slice-grid {
   display: grid;
   gap: 8px;
-  grid-template-columns: repeat(4, minmax(118px, 1fr));
+  grid-template-columns: repeat(var(--slice-columns), minmax(118px, 1fr));
 }
 
 .slice {
@@ -159,8 +159,8 @@ button {
 .cells {
   aspect-ratio: 1;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  grid-template-rows: repeat(4, 1fr);
+  grid-template-columns: repeat(var(--board-columns), 1fr);
+  grid-template-rows: repeat(var(--board-rows), 1fr);
 }
 
 .cell {
@@ -257,7 +257,8 @@ button {
 }
 
 .status,
-.evaluation-card {
+.evaluation-card,
+.setup-card {
   background: var(--surface-2);
   border: 1px solid var(--border);
   margin: 12px 0;
@@ -282,6 +283,57 @@ button {
 .evaluation-card {
   display: grid;
   gap: 8px;
+}
+
+.setup-card {
+  display: grid;
+  gap: 10px;
+}
+
+.setup-heading {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.setup-heading h3 {
+  margin: 0;
+}
+
+.setup-heading span,
+.field span,
+.setup-note {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.axis-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.field {
+  display: grid;
+  gap: 5px;
+}
+
+.field input,
+.field select {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0;
+  color: var(--text);
+  font: inherit;
+  min-height: 38px;
+  padding: 0.55rem 0.65rem;
+}
+
+.setup-note {
+  font-weight: 700;
+  line-height: 1.35;
+  margin: 0;
 }
 
 .evaluation-heading strong {
@@ -337,6 +389,12 @@ button {
 
 .primary-button:hover {
   background: var(--brand-strong);
+}
+
+.primary-button:disabled {
+  cursor: not-allowed;
+  filter: grayscale(0.6);
+  opacity: 0.55;
 }
 
 .secondary-button {
@@ -440,7 +498,7 @@ button {
   }
 
   .slice-grid {
-    grid-template-columns: repeat(4, minmax(92px, 1fr));
+    grid-template-columns: repeat(var(--slice-columns), minmax(92px, 1fr));
   }
 }
 
@@ -466,7 +524,7 @@ button {
 
   .slice-grid {
     gap: 6px;
-    grid-template-columns: repeat(2, minmax(138px, 1fr));
+    grid-template-columns: repeat(var(--slice-columns), minmax(138px, 1fr));
     min-width: 300px;
   }
 
@@ -482,6 +540,10 @@ button {
 
 @media (max-width: 420px) {
   .slice-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .axis-grid {
     grid-template-columns: 1fr;
   }
 }

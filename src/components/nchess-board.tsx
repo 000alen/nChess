@@ -1,26 +1,31 @@
 "use client";
 
+import type { CSSProperties } from "react";
 import { useEffect, useMemo, useState } from "react";
 
 import {
   applyMove,
   createInitialBoard,
+  DEFAULT_BOARD_CONFIG,
   evaluateBoard,
   legalMovesForPiece,
   Move,
   nextTurn,
+  normalizeBoardConfig,
   pieceAt,
   PIECE_SYMBOLS,
   positionKey,
   positionsEqual,
+  type BoardConfig,
+  type BoardDimension,
   type BoardState,
   type Piece,
   type Position,
 } from "@/lib/chess";
 
 type Slice = {
-  k: number;
-  h: number;
+  coordinates: Position;
+  label: string;
 };
 
 type MoveActor = "human" | "bot";
@@ -56,7 +61,9 @@ function getInitialTheme(): Theme {
 }
 
 export function NChessBoard() {
-  const [board, setBoard] = useState<BoardState>(() => createInitialBoard());
+  const [boardConfig, setBoardConfig] = useState<BoardConfig>(DEFAULT_BOARD_CONFIG);
+  const [draftConfig, setDraftConfig] = useState<BoardConfig>(DEFAULT_BOARD_CONFIG);
+  const [board, setBoard] = useState<BoardState>(() => createInitialBoard(DEFAULT_BOARD_CONFIG));
   const [selectedPosition, setSelectedPosition] = useState<Position | null>(null);
   const [moveHistory, setMoveHistory] = useState<MoveRecord[]>([]);
   const [currentPly, setCurrentPly] = useState(0);
@@ -122,7 +129,14 @@ export function NChessBoard() {
   }, [theme]);
 
   function resetGame() {
-    setBoard(createInitialBoard());
+    startNewGame(boardConfig);
+  }
+
+  function startNewGame(config: BoardConfig) {
+    const nextConfig = normalizeBoardConfig(config);
+    setBoardConfig(nextConfig);
+    setDraftConfig(nextConfig);
+    setBoard(createInitialBoard(nextConfig));
     setSelectedPosition(null);
     setMoveHistory([]);
     setCurrentPly(0);
@@ -155,7 +169,7 @@ export function NChessBoard() {
     }
 
     const boundedPly = Math.max(0, Math.min(ply, moveHistory.length));
-    const targetBoard = boundedPly === 0 ? createInitialBoard() : moveHistory[boundedPly - 1].board;
+    const targetBoard = boundedPly === 0 ? createInitialBoard(boardConfig) : moveHistory[boundedPly - 1].board;
     setBoard(targetBoard);
     setCurrentPly(boundedPly);
     setSelectedPosition(null);
@@ -232,7 +246,7 @@ export function NChessBoard() {
       <header className="top-bar">
         <div>
           <p className="brand-kicker">nChess</p>
-          <strong>4D Chess Arena</strong>
+          <strong>{board.dimension}D Chess Arena</strong>
         </div>
         <button
           className="theme-toggle"
@@ -246,10 +260,10 @@ export function NChessBoard() {
 
       <section className="game-layout" aria-label="nChess game">
         <div className="board-stack">
-          <div className="slice-grid">
+          <div className="slice-grid" style={{ "--slice-columns": sliceColumnCount(board) } as CSSProperties}>
             {slicesForBoard(board).map((slice) => (
               <BoardSlice
-                key={`${slice.k}-${slice.h}`}
+                key={slice.coordinates.join(",") || "2d"}
                 board={board}
                 slice={slice}
                 selectedMoves={selectedMoves}
@@ -275,6 +289,12 @@ export function NChessBoard() {
             source={engineEvaluation.score === null ? "local" : "engine"}
           />
           {botError ? <p className="bot-error">{botError}</p> : null}
+          <BoardSetup
+            config={draftConfig}
+            currentConfig={boardConfig}
+            onApply={startNewGame}
+            onChange={setDraftConfig}
+          />
 
           <div className="actions">
             <button className="primary-button" type="button" onClick={resetGame}>
@@ -319,6 +339,78 @@ export function NChessBoard() {
         </aside>
       </section>
     </main>
+  );
+}
+
+function BoardSetup({
+  config,
+  currentConfig,
+  onApply,
+  onChange,
+}: {
+  config: BoardConfig;
+  currentConfig: BoardConfig;
+  onApply: (config: BoardConfig) => void;
+  onChange: (config: BoardConfig) => void;
+}) {
+  const normalizedConfig = normalizeBoardConfig(config);
+  const isCurrentConfig = (
+    normalizedConfig.dimension === currentConfig.dimension
+    && normalizedConfig.size.length === currentConfig.size.length
+    && normalizedConfig.size.every((value, index) => value === currentConfig.size[index])
+  );
+
+  function updateDimension(dimension: BoardDimension) {
+    const nextSize = Array.from({ length: dimension }, (_, axis) => config.size[axis] ?? 4);
+    onChange(normalizeBoardConfig({ dimension, size: nextSize }));
+  }
+
+  function updateAxisSize(axis: number, value: number) {
+    const nextSize = config.size.map((size, index) => (index === axis ? value : size));
+    onChange(normalizeBoardConfig({ dimension: config.dimension, size: nextSize }));
+  }
+
+  return (
+    <section className="setup-card" aria-label="Board setup">
+      <div className="setup-heading">
+        <h3>Board setup</h3>
+        <span>{currentConfig.dimension}D active</span>
+      </div>
+      <label className="field">
+        <span>Dimensions</span>
+        <select
+          value={config.dimension}
+          onChange={(event) => updateDimension(Number(event.target.value) as BoardDimension)}
+        >
+          <option value={2}>2D</option>
+          <option value={3}>3D</option>
+          <option value={4}>4D</option>
+        </select>
+      </label>
+      <div className="axis-grid">
+        {config.size.map((axisSize, axis) => (
+          <label className="field" key={`axis-${axis}`}>
+            <span>{axisLabel(axis)}</span>
+            <input
+              type="number"
+              min={4}
+              max={12}
+              value={axisSize}
+              onChange={(event) => updateAxisSize(axis, Number(event.target.value))}
+            />
+          </label>
+        ))}
+      </div>
+      <button
+        className="primary-button"
+        disabled={isCurrentConfig}
+        type="button"
+        onClick={() => onApply(normalizedConfig)}
+      >
+        New {normalizedConfig.dimension}D game
+      </button>
+      <p className="setup-note">Generated starts require at least 4 cells per axis.</p>
+    </section>
   );
 }
 
@@ -437,10 +529,12 @@ function BoardSlice({
   onCellClick: (position: Position) => void | Promise<void>;
 }) {
   const cells = [];
+  const columns = board.size[0];
+  const rows = board.size[1];
 
-  for (let y = board.size[1] - 1; y >= 0; y -= 1) {
-    for (let x = 0; x < board.size[0]; x += 1) {
-      const position = [x, y, slice.k, slice.h];
+  for (let y = rows - 1; y >= 0; y -= 1) {
+    for (let x = 0; x < columns; x += 1) {
+      const position = [x, y, ...slice.coordinates];
       cells.push(
         <BoardCell
           key={positionKey(position)}
@@ -454,13 +548,17 @@ function BoardSlice({
     }
   }
 
+  const gridStyle = {
+    "--board-columns": columns,
+    "--board-rows": rows,
+  } as CSSProperties;
+
   return (
-    <article className="slice" aria-label={`Slice z ${slice.k}, w ${slice.h}`}>
+    <article className="slice" aria-label={slice.label}>
       <div className="slice-label">
-        <span>z={slice.k}</span>
-        <span>w={slice.h}</span>
+        <span>{slice.label}</span>
       </div>
-      <div className="cells">{cells}</div>
+      <div className="cells" style={gridStyle}>{cells}</div>
     </article>
   );
 }
@@ -507,13 +605,44 @@ function BoardCell({
 }
 
 function slicesForBoard(board: BoardState): Slice[] {
+  if (board.dimension === 2) {
+    return [{ coordinates: [], label: "Board" }];
+  }
+
+  if (board.dimension === 3) {
+    return Array.from({ length: board.size[2] }, (_, index) => {
+      const z = board.size[2] - index - 1;
+      return {
+        coordinates: [z],
+        label: `z=${z}`,
+      };
+    });
+  }
+
   const slices: Slice[] = [];
   for (let k = board.size[2] - 1; k >= 0; k -= 1) {
     for (let h = 0; h < board.size[3]; h += 1) {
-      slices.push({ k, h });
+      slices.push({
+        coordinates: [k, h],
+        label: `z=${k} w=${h}`,
+      });
     }
   }
   return slices;
+}
+
+function sliceColumnCount(board: BoardState): number {
+  if (board.dimension === 2) {
+    return 1;
+  }
+  if (board.dimension === 3) {
+    return Math.min(board.size[2], 4);
+  }
+  return Math.min(board.size[3], 4);
+}
+
+function axisLabel(axis: number): string {
+  return ["x", "y", "z", "w"][axis] ?? `axis ${axis + 1}`;
 }
 
 function describeMove(piece: Piece | undefined, capturedPiece: Piece | undefined, move: Move): string {
