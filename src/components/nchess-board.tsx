@@ -60,13 +60,18 @@ type AnalysisPartial = {
   cached?: boolean;
   depth?: number;
   elapsedMs?: number;
-  error?: string;
+  error?: ApiErrorPayload | string;
   move?: Move | null;
   nodes?: number;
   ok?: boolean;
   requestedDepth?: number;
   score?: number;
   searchElapsedMs?: number;
+};
+
+type ApiErrorPayload = {
+  code?: string;
+  message?: string;
 };
 
 type Theme = "dark" | "light";
@@ -375,7 +380,7 @@ export function NChessBoard() {
 
       if (!finalPartial?.move) {
         setHintMove(null);
-        setHintError(finalPartial?.error ?? "No legal hint available.");
+        setHintError(errorMessage(finalPartial?.error, "No legal hint available."));
         return;
       }
       setHintMove(finalPartial.move);
@@ -454,7 +459,7 @@ export function NChessBoard() {
       });
 
       if (!finalPartial?.move) {
-        setBotError(finalPartial?.error ?? "Bot has no legal move.");
+        setBotError(errorMessage(finalPartial?.error, "Bot has no legal move."));
         return;
       }
 
@@ -1217,7 +1222,7 @@ function formatTime(timeMs: number): string {
 
 function formatAnalysisInfo(partial: AnalysisPartial): string {
   if (partial.error) {
-    return partial.error;
+    return errorMessage(partial.error, "Analysis failed");
   }
   const depth = partial.depth ?? partial.requestedDepth ?? 0;
   const score = typeof partial.score === "number" ? ` ${formatScore(partial.score)}` : "";
@@ -1225,6 +1230,16 @@ function formatAnalysisInfo(partial: AnalysisPartial): string {
   const elapsed = typeof partial.searchElapsedMs === "number" ? ` ${formatTime(partial.searchElapsedMs)}` : "";
   const cached = partial.cached ? " cached" : "";
   return `Depth ${depth}${score}${nodes}${elapsed}${cached}`;
+}
+
+function errorMessage(error: ApiErrorPayload | string | undefined, fallback: string): string {
+  if (!error) {
+    return fallback;
+  }
+  if (typeof error === "string") {
+    return error;
+  }
+  return error.message ?? error.code ?? fallback;
 }
 
 async function readJsonResponse<T>(response: Response, fallbackMessage: string): Promise<T> {
