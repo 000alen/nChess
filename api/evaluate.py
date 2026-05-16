@@ -2,7 +2,7 @@ import json
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler
 
-from api.bot import COLORS, build_board
+from api.chess_api import COLORS, build_board
 from nChess.Engine import evaluate_position
 from nChess.nBoard.Board import ClassicColor
 
@@ -56,4 +56,16 @@ def evaluate_request(request):
         "color": color_name,
         "score": score,
         "whiteScore": score if color is ClassicColor.white else -score,
+        "status": {
+            "white": board_status(board, ClassicColor.white),
+            "black": board_status(board, ClassicColor.black),
+        },
+    }
+
+
+def board_status(board, color):
+    return {
+        "inCheck": board.in_check(color),
+        "inCheckmate": board.in_checkmate(color),
+        "inStalemate": board.in_stalemate(color),
     }

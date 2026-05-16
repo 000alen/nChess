@@ -4,11 +4,9 @@ import type { CSSProperties } from "react";
 import { useEffect, useMemo, useState } from "react";
 
 import {
-  applyMove,
   createInitialBoard,
   DEFAULT_BOARD_CONFIG,
   evaluateBoard,
-  legalMovesForPiece,
   Move,
   nextTurn,
   normalizeBoardConfig,
@@ -34,6 +32,7 @@ type MoveRecord = {
   id: string;
   actor: MoveActor;
   board: BoardState;
+  capturedPiece?: Piece;
   evaluation: number;
   evaluationSource: "engine" | "local";
   label: string;
@@ -44,7 +43,14 @@ type MoveRecord = {
 type EngineEvaluation = {
   loading: boolean;
   score: number | null;
+  status: EngineStatus | null;
 };
+
+type EngineStatus = Record<"white" | "black", {
+  inCheck: boolean;
+  inCheckmate: boolean;
+  inStalemate: boolean;
+}>;
 
 type Theme = "dark" | "light";
 const THEME_STORAGE_KEY = "nchess-theme";
@@ -76,21 +82,24 @@ export function NChessBoard() {
   const [hintMove, setHintMove] = useState<Move | null>(null);
   const [hintThinking, setHintThinking] = useState(false);
   const [hintError, setHintError] = useState<string | null>(null);
+  const [legalMoves, setLegalMoves] = useState<Move[]>([]);
+  const [legalMovesLoading, setLegalMovesLoading] = useState(false);
+  const [moveError, setMoveError] = useState<string | null>(null);
   const [engineEvaluation, setEngineEvaluation] = useState<EngineEvaluation>({
     loading: true,
     score: null,
+    status: null,
   });
 
   const fallbackEvaluation = useMemo(() => evaluateBoard(board), [board]);
   const evaluation = engineEvaluation.score ?? fallbackEvaluation;
-  const selectedPiece = selectedPosition ? pieceAt(board, selectedPosition) : undefined;
+  const currentStatus = engineEvaluation.status?.[board.turn] ?? null;
+  const isViewingPast = currentPly < moveHistory.length;
+  const capturedPieces = useMemo(() => moveHistory.flatMap((record) => (
+    record.capturedPiece ? [record.capturedPiece] : []
+  )), [moveHistory]);
   const canHumanMove = !botThinking && (!botEnabled || board.turn === "white");
-  const selectedMoves = useMemo(() => {
-    if (!canHumanMove || !selectedPiece || selectedPiece.color !== board.turn) {
-      return [];
-    }
-    return legalMovesForPiece(board, selectedPiece);
-  }, [board, canHumanMove, selectedPiece]);
+  const selectedMoves = legalMovesLoading ? [] : legalMoves;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -110,6 +119,7 @@ export function NChessBoard() {
           signal: controller.signal,
         });
         const payload = await response.json() as {
+          status?: EngineStatus;
           whiteScore?: number;
         };
 
@@ -117,7 +127,7 @@ export function NChessBoard() {
           throw new Error("Evaluation request failed");
         }
         const whiteScore = payload.whiteScore;
-        setEngineEvaluation({ loading: false, score: whiteScore });
+        setEngineEvaluation({ loading: false, score: whiteScore, status: payload.status ?? null });
         setMoveHistory((records) => records.map((record) => (
           sameBoard(record.board, board)
             ? { ...record, evaluation: whiteScore, evaluationSource: "engine" }
@@ -125,7 +135,7 @@ export function NChessBoard() {
         )));
       } catch (error) {
         if (!controller.signal.aborted) {
-          setEngineEvaluation({ loading: false, score: null });
+          setEngineEvaluation({ loading: false, score: null, status: null });
         }
       }
     }
@@ -138,6 +148,50 @@ export function NChessBoard() {
   useEffect(() => {
     window.localStorage.setItem(THEME_STORAGE_KEY, theme);
   }, [theme]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    async function loadLegalMoves() {
+      if (!selectedPosition || !canHumanMove) {
+        setLegalMoves([]);
+        return;
+      }
+
+      setLegalMovesLoading(true);
+      try {
+        const response = await fetch("/api/legal-moves", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            board,
+            position: selectedPosition,
+          }),
+          signal: controller.signal,
+        });
+        const payload = await response.json() as {
+          moves?: Move[];
+        };
+        if (!response.ok || !Array.isArray(payload.moves)) {
+          throw new Error("Legal moves request failed");
+        }
+        setLegalMoves(payload.moves);
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          setLegalMoves([]);
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setLegalMovesLoading(false);
+        }
+      }
+    }
+
+    void loadLegalMoves();
+    return () => controller.abort();
+  }, [board, canHumanMove, selectedPosition]);
 
   function resetGame() {
     startNewGame(boardConfig);
@@ -154,15 +208,17 @@ export function NChessBoard() {
     setBotError(null);
     setBotThinking(false);
     clearHint();
+    setMoveError(null);
+    setLegalMoves([]);
   }
 
-  function commitMove(currentBoard: BoardState, move: Move, actor: MoveActor, basePly: number): BoardState {
+  function commitMove(currentBoard: BoardState, move: Move, nextBoard: BoardState, actor: MoveActor, basePly: number): BoardState {
     const movingPiece = pieceAt(currentBoard, move.from);
     const capturedPiece = pieceAt(currentBoard, move.to);
-    const nextBoard = applyMove(currentBoard, move);
     const record: MoveRecord = {
       actor,
       board: nextBoard,
+      capturedPiece,
       evaluation: evaluateBoard(nextBoard),
       evaluationSource: "local",
       id: `${basePly + 1}-${positionKey(move.from)}-${positionKey(move.to)}`,
@@ -174,6 +230,8 @@ export function NChessBoard() {
     setBoard(nextBoard);
     setMoveHistory((records) => [...records.slice(0, basePly), record]);
     setCurrentPly(record.ply);
+    setMoveError(null);
+    setLegalMoves([]);
     clearHint();
     return nextBoard;
   }
@@ -189,6 +247,8 @@ export function NChessBoard() {
     setCurrentPly(boundedPly);
     setSelectedPosition(null);
     setBotError(null);
+    setMoveError(null);
+    setLegalMoves([]);
     clearHint();
   }
 
@@ -201,9 +261,7 @@ export function NChessBoard() {
     const matchingMove = selectedMoves.find((move) => positionsEqual(move.to, position));
 
     if (matchingMove) {
-      const nextBoard = commitMove(board, matchingMove, "human", currentPly);
-      setSelectedPosition(null);
-      await requestBotMove(nextBoard, currentPly + 1);
+      await requestHumanMove(matchingMove);
       return;
     }
 
@@ -213,7 +271,38 @@ export function NChessBoard() {
     }
 
     setSelectedPosition(null);
+    setLegalMoves([]);
     clearHint();
+  }
+
+  async function requestHumanMove(move: Move) {
+    setMoveError(null);
+    try {
+      const response = await fetch("/api/move", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          board,
+          move,
+        }),
+      });
+      const payload = await response.json() as {
+        board?: BoardState;
+        move?: Move;
+        error?: string;
+        detail?: string;
+      };
+      if (!response.ok || !payload.board || !payload.move) {
+        throw new Error(payload.detail ?? payload.error ?? "Move request failed");
+      }
+      const nextBoard = commitMove(board, payload.move, payload.board, "human", currentPly);
+      setSelectedPosition(null);
+      await requestBotMove(nextBoard, currentPly + 1);
+    } catch (error) {
+      setMoveError(error instanceof Error ? error.message : "Move request failed");
+    }
   }
 
   function clearHint() {
@@ -238,6 +327,7 @@ export function NChessBoard() {
         }),
       });
       const payload = await response.json() as {
+        board?: BoardState;
         move?: Move | null;
         error?: string;
         detail?: string;
@@ -280,6 +370,7 @@ export function NChessBoard() {
       });
 
       const payload = await response.json() as {
+        board?: BoardState;
         move?: Move | null;
         error?: string;
         detail?: string;
@@ -293,7 +384,25 @@ export function NChessBoard() {
       }
 
       const botMove = payload.move;
-      commitMove(currentBoard, botMove, "bot", basePly);
+      if (payload.board) {
+        commitMove(currentBoard, botMove, payload.board, "bot", basePly);
+      } else {
+        const response = await fetch("/api/move", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            board: currentBoard,
+            move: botMove,
+          }),
+        });
+        const movePayload = await response.json() as { board?: BoardState };
+        if (!response.ok || !movePayload.board) {
+          throw new Error("Bot move application failed");
+        }
+        commitMove(currentBoard, botMove, movePayload.board, "bot", basePly);
+      }
     } catch (error) {
       setBotError(error instanceof Error ? error.message : "Bot request failed");
     } finally {
@@ -343,6 +452,8 @@ export function NChessBoard() {
           <div className="status">
             <span>Turn</span>
             <div className="turn">{botThinking ? "Bot thinking..." : board.turn}</div>
+            {currentStatus ? <StatusLine status={currentStatus} /> : null}
+            {isViewingPast ? <p className="rewind-state">Viewing past position</p> : null}
           </div>
           <EvaluationBar
             loading={engineEvaluation.loading}
@@ -350,6 +461,7 @@ export function NChessBoard() {
             source={engineEvaluation.score === null ? "local" : "engine"}
           />
           {botError ? <p className="bot-error">{botError}</p> : null}
+          {moveError ? <p className="bot-error">{moveError}</p> : null}
           <BoardSetup
             config={draftConfig}
             currentConfig={boardConfig}
@@ -408,6 +520,7 @@ export function NChessBoard() {
           ) : null}
 
           <HistoryPanel
+            capturedPieces={capturedPieces}
             currentPly={currentPly}
             disabled={botThinking}
             moveHistory={moveHistory}
@@ -525,11 +638,13 @@ function EvaluationBar({
 }
 
 function HistoryPanel({
+  capturedPieces,
   currentPly,
   disabled,
   moveHistory,
   onJump,
 }: {
+  capturedPieces: Piece[];
   currentPly: number;
   disabled: boolean;
   moveHistory: MoveRecord[];
@@ -591,8 +706,44 @@ function HistoryPanel({
           ))}
         </ol>
       )}
+      <CapturedPieces pieces={capturedPieces} />
     </section>
   );
+}
+
+function CapturedPieces({ pieces }: { pieces: Piece[] }) {
+  return (
+    <section className="captured-panel" aria-label="Captured pieces">
+      <div className="history-heading">
+        <h3>Captured</h3>
+        <span>{pieces.length}</span>
+      </div>
+      {pieces.length === 0 ? (
+        <p>No captures yet.</p>
+      ) : (
+        <div className="captured-list">
+          {pieces.map((piece, index) => (
+            <span className={`captured-piece ${piece.color}`} key={`${piece.id}-${index}`}>
+              {PIECE_SYMBOLS[piece.color][piece.kind]}
+            </span>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function StatusLine({ status }: { status: EngineStatus["white"] }) {
+  if (status.inCheckmate) {
+    return <p className="status-line danger">Checkmate</p>;
+  }
+  if (status.inStalemate) {
+    return <p className="status-line">Stalemate</p>;
+  }
+  if (status.inCheck) {
+    return <p className="status-line danger">Check</p>;
+  }
+  return <p className="status-line">Safe</p>;
 }
 
 function BoardSlice({

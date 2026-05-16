@@ -2,20 +2,19 @@ import json
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler
 
-from api.chess_api import COLORS, build_board, serialize_board, serialize_move
-from nChess.Engine import evaluate_position, find_best_move
+from api.chess_api import build_board, deserialize_move, serialize_board, serialize_move
 
 
 class handler(BaseHTTPRequestHandler):
     def do_POST(self):
         try:
             request = self.read_json()
-            response = choose_bot_move(request)
+            response = move_request(request)
             self.write_json(HTTPStatus.OK, response)
         except ValueError as exc:
             self.write_json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
         except Exception as exc:
-            self.write_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": "bot failed", "detail": str(exc)})
+            self.write_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": "move failed", "detail": str(exc)})
 
     def do_OPTIONS(self):
         self.send_response(HTTPStatus.NO_CONTENT)
@@ -38,27 +37,20 @@ class handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
 
-def choose_bot_move(request):
+def move_request(request):
     board_payload = request.get("board")
     if not isinstance(board_payload, dict):
         raise ValueError("board is required")
 
-    color_name = request.get("color", board_payload.get("turn"))
-    if color_name not in COLORS:
-        raise ValueError("color must be 'white' or 'black'")
-
-    depth = int(request.get("depth", 1))
-    depth = max(1, min(depth, 1))
-
     board = build_board(board_payload)
-    result = find_best_move(board, depth=depth, color=COLORS[color_name], evaluator=evaluate_position)
-    if result.move is not None:
-        board.move(result.move)
+    move = deserialize_move(request.get("move"), board.dimension)
+    initial_piece = board.get(move.initial_position)
+    if move not in initial_piece.moves():
+        raise ValueError("move is not legal")
+
+    board.move(move)
 
     return {
-        "move": serialize_move(result.move),
+        "move": serialize_move(move),
         "board": serialize_board(board),
-        "score": result.score,
-        "depth": result.depth,
-        "nodes": result.nodes,
     }

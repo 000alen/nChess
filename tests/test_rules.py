@@ -1,8 +1,10 @@
 import unittest
+import importlib.util
 from pathlib import Path
 
 from api.bot import choose_bot_move
 from api.evaluate import evaluate_request
+from api.move import move_request
 from nChess.Engine import best_move, classic_evaluate, doubled_pawns, evaluate_position, find_best_move, legal_moves
 from nChess.GUI.geometry import (
     board_coordinates_for_indices,
@@ -21,6 +23,13 @@ from nChess.Piece.Pawn import Pawn
 from nChess.Piece.Queen import Queen
 from nChess.Piece.Rook import Rook
 from nChess.utils import to_PNG
+
+LEGAL_MOVES_SPEC = importlib.util.spec_from_file_location(
+    "legal_moves_api",
+    Path(__file__).parents[1] / "api" / "legal-moves.py",
+)
+legal_moves_api = importlib.util.module_from_spec(LEGAL_MOVES_SPEC)
+LEGAL_MOVES_SPEC.loader.exec_module(legal_moves_api)
 
 
 class BoardRuleTests(unittest.TestCase):
@@ -154,6 +163,49 @@ class IntegrationSmokeTests(unittest.TestCase):
         response = choose_bot_move(payload)
 
         self.assertEqual(response["move"], {"from": [0, 0], "to": [0, 5]})
+        self.assertEqual(response["board"]["turn"], "black")
+
+    def test_legal_moves_api_returns_python_moves(self):
+        payload = {
+            "board": {
+                "dimension": 2,
+                "size": [8, 8],
+                "turn": "white",
+                "pieces": [
+                    {"kind": "king", "color": "white", "position": [4, 0], "hasMoved": False},
+                    {"kind": "rook", "color": "white", "position": [0, 0], "hasMoved": False},
+                    {"kind": "king", "color": "black", "position": [4, 7], "hasMoved": False},
+                ],
+            },
+            "position": [0, 0],
+        }
+
+        response = legal_moves_api.legal_moves_request(payload)
+
+        self.assertIn({"from": [0, 0], "to": [0, 1]}, response["moves"])
+
+    def test_move_api_applies_python_move(self):
+        payload = {
+            "board": {
+                "dimension": 2,
+                "size": [8, 8],
+                "turn": "white",
+                "pieces": [
+                    {"kind": "king", "color": "white", "position": [4, 0], "hasMoved": False},
+                    {"kind": "rook", "color": "white", "position": [0, 0], "hasMoved": False},
+                    {"kind": "king", "color": "black", "position": [4, 7], "hasMoved": False},
+                ],
+            },
+            "move": {"from": [0, 0], "to": [0, 1]},
+        }
+
+        response = move_request(payload)
+
+        self.assertEqual(response["board"]["turn"], "black")
+        self.assertIn(
+            {"id": "white-rook-0,1", "kind": "rook", "color": "white", "position": [0, 1], "hasMoved": True},
+            response["board"]["pieces"],
+        )
 
     def test_evaluate_api_returns_white_score(self):
         payload = {
