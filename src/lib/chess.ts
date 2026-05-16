@@ -24,6 +24,7 @@ export type Move = {
 
 export type BoardState = {
   dimension: number;
+  hash?: string;
   size: Position;
   pieces: Piece[];
   turn: PieceColor;

@@ -57,6 +57,7 @@ type EngineStatus = Record<"white" | "black", {
 
 type AnalysisPartial = {
   board?: BoardState;
+  cached?: boolean;
   depth?: number;
   elapsedMs?: number;
   error?: string;
@@ -109,6 +110,7 @@ export function NChessBoard() {
   const [hintThinking, setHintThinking] = useState(false);
   const [hintError, setHintError] = useState<string | null>(null);
   const [analysisInfo, setAnalysisInfo] = useState<string | null>(null);
+  const [analysisMove, setAnalysisMove] = useState<Move | null>(null);
   const [legalMoves, setLegalMoves] = useState<Move[]>([]);
   const [legalMovesLoading, setLegalMovesLoading] = useState(false);
   const [moveError, setMoveError] = useState<string | null>(null);
@@ -348,6 +350,7 @@ export function NChessBoard() {
     setHintError(null);
     setHintThinking(false);
     setAnalysisInfo(null);
+    setAnalysisMove(null);
   }
 
   async function requestHint() {
@@ -362,6 +365,7 @@ export function NChessBoard() {
         onPartial: (partial) => {
           if (partial.move) {
             setHintMove(partial.move);
+          setAnalysisMove(partial.move);
           }
           setAnalysisInfo(formatAnalysisInfo(partial));
         },
@@ -441,6 +445,7 @@ export function NChessBoard() {
         onPartial: (partial) => {
           if (partial.move) {
             setHintMove(partial.move);
+            setAnalysisMove(partial.move);
           }
           setAnalysisInfo(formatAnalysisInfo(partial));
         },
@@ -529,6 +534,7 @@ export function NChessBoard() {
           </div>
           <EvaluationBar
             loading={engineEvaluation.loading}
+            positionHash={board.hash}
             score={evaluation}
             source={engineEvaluation.score === null ? "local" : "engine"}
           />
@@ -603,6 +609,11 @@ export function NChessBoard() {
             </p>
           ) : null}
           {analysisInfo ? <p className="analysis-line">{analysisInfo}</p> : null}
+          {analysisMove ? (
+            <p className="analysis-line">
+              PV: {formatPosition(analysisMove.from)} → {formatPosition(analysisMove.to)}
+            </p>
+          ) : null}
 
           <HistoryPanel
             capturedPieces={capturedPieces}
@@ -787,10 +798,12 @@ function PromotionSettings({
 
 function EvaluationBar({
   loading,
+  positionHash,
   score,
   source,
 }: {
   loading: boolean;
+  positionHash?: string;
   score: number;
   source: "engine" | "local";
 }) {
@@ -806,6 +819,7 @@ function EvaluationBar({
       <p className="evaluation-source">
         {source === "engine" ? "Python engine score" : "Local material fallback"}
       </p>
+      {positionHash ? <p className="evaluation-source">Position {positionHash}</p> : null}
       <div className="evaluation-bar" aria-hidden="true">
         <div className="evaluation-white" style={{ height: `${whitePercent}%` }} />
         <div className="evaluation-marker" style={{ bottom: `${whitePercent}%` }} />
@@ -1207,7 +1221,8 @@ function formatAnalysisInfo(partial: AnalysisPartial): string {
   const score = typeof partial.score === "number" ? ` ${formatScore(partial.score)}` : "";
   const nodes = typeof partial.nodes === "number" ? ` ${partial.nodes} nodes` : "";
   const elapsed = typeof partial.searchElapsedMs === "number" ? ` ${formatTime(partial.searchElapsedMs)}` : "";
-  return `Depth ${depth}${score}${nodes}${elapsed}`;
+  const cached = partial.cached ? " cached" : "";
+  return `Depth ${depth}${score}${nodes}${elapsed}${cached}`;
 }
 
 async function readJsonResponse<T>(response: Response, fallbackMessage: string): Promise<T> {
