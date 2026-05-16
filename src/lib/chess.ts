@@ -55,12 +55,12 @@ export function createInitialBoard(): BoardState {
   pieces.push(createPiece("rook", "white", [3, 0, 0, 0]));
 
   for (let x = 0; x < 4; x += 1) {
-    pieces.push(createPiece("pawn", "black", [x, 2, 3, 3]));
+    pieces.push(createPiece("pawn", "black", [x, 2, 3, 2]));
   }
-  pieces.push(createPiece("rook", "black", [0, 3, 3, 3]));
-  pieces.push(createPiece("queen", "black", [1, 3, 3, 3]));
-  pieces.push(createPiece("king", "black", [2, 3, 3, 3]));
-  pieces.push(createPiece("rook", "black", [3, 3, 3, 3]));
+  pieces.push(createPiece("rook", "black", [0, 3, 3, 2]));
+  pieces.push(createPiece("queen", "black", [1, 3, 3, 2]));
+  pieces.push(createPiece("king", "black", [2, 3, 3, 2]));
+  pieces.push(createPiece("rook", "black", [3, 3, 3, 2]));
 
   return {
     dimension: 4,
