@@ -1,4 +1,3 @@
-from copy import deepcopy
 from itertools import combinations, product
 from typing import TypeVar
 
@@ -100,7 +99,7 @@ class nBoard:
             self.size,
             self.turn_number,
             self.turn_order,
-            deepcopy(self.pieces)
+            [piece.clone() for piece in self.pieces]
         )
 
     def in_bounds(self, position: IntegerVector) -> bool:

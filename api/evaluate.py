@@ -1,4 +1,5 @@
 import json
+from time import perf_counter
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler
 
@@ -40,6 +41,7 @@ class handler(BaseHTTPRequestHandler):
 
 
 def evaluate_request(request):
+    start = perf_counter()
     board_payload = request.get("board")
     if not isinstance(board_payload, dict):
         raise ValueError("board is required")
@@ -60,6 +62,7 @@ def evaluate_request(request):
             "white": board_status(board, ClassicColor.white),
             "black": board_status(board, ClassicColor.black),
         },
+        "elapsedMs": elapsed_ms(start),
     }
 
 
@@ -69,3 +72,7 @@ def board_status(board, color):
         "inCheckmate": board.in_checkmate(color),
         "inStalemate": board.in_stalemate(color),
     }
+
+
+def elapsed_ms(start):
+    return round((perf_counter() - start) * 1000, 2)

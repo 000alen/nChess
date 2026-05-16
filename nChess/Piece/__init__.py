@@ -35,6 +35,12 @@ class Piece(ABC):
     def set_board(self, board):
         self.board = board
 
+    def clone(self) -> "Piece":
+        kwargs = {}
+        if hasattr(self, "capture_axis"):
+            kwargs["capture_axis"] = self.capture_axis
+        return type(self)(self.position, self.color, self.has_moved, **kwargs)
+
     def move(self, move: "Move") -> None:
         assert self.position == move.initial_position
         self.position = move.final_position

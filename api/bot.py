@@ -1,4 +1,5 @@
 import json
+from time import perf_counter
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler
 
@@ -39,6 +40,7 @@ class handler(BaseHTTPRequestHandler):
 
 
 def choose_bot_move(request):
+    start = perf_counter()
     board_payload = request.get("board")
     if not isinstance(board_payload, dict):
         raise ValueError("board is required")
@@ -61,4 +63,9 @@ def choose_bot_move(request):
         "score": result.score,
         "depth": result.depth,
         "nodes": result.nodes,
+        "elapsedMs": elapsed_ms(start),
     }
+
+
+def elapsed_ms(start):
+    return round((perf_counter() - start) * 1000, 2)

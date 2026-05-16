@@ -38,6 +38,7 @@ type MoveRecord = {
   label: string;
   move: Move;
   ply: number;
+  timeMs?: number;
 };
 
 type EngineEvaluation = {
@@ -172,6 +173,7 @@ export function NChessBoard() {
           signal: controller.signal,
         });
         const payload = await response.json() as {
+          elapsedMs?: number;
           moves?: Move[];
         };
         if (!response.ok || !Array.isArray(payload.moves)) {
@@ -212,7 +214,14 @@ export function NChessBoard() {
     setLegalMoves([]);
   }
 
-  function commitMove(currentBoard: BoardState, move: Move, nextBoard: BoardState, actor: MoveActor, basePly: number): BoardState {
+  function commitMove(
+    currentBoard: BoardState,
+    move: Move,
+    nextBoard: BoardState,
+    actor: MoveActor,
+    basePly: number,
+    timeMs?: number,
+  ): BoardState {
     const movingPiece = pieceAt(currentBoard, move.from);
     const capturedPiece = pieceAt(currentBoard, move.to);
     const record: MoveRecord = {
@@ -225,6 +234,7 @@ export function NChessBoard() {
       label: describeMove(movingPiece, capturedPiece, move),
       move,
       ply: basePly + 1,
+      timeMs,
     };
 
     setBoard(nextBoard);
@@ -290,6 +300,7 @@ export function NChessBoard() {
       });
       const payload = await response.json() as {
         board?: BoardState;
+        elapsedMs?: number;
         move?: Move;
         error?: string;
         detail?: string;
@@ -297,7 +308,7 @@ export function NChessBoard() {
       if (!response.ok || !payload.board || !payload.move) {
         throw new Error(payload.detail ?? payload.error ?? "Move request failed");
       }
-      const nextBoard = commitMove(board, payload.move, payload.board, "human", currentPly);
+      const nextBoard = commitMove(board, payload.move, payload.board, "human", currentPly, payload.elapsedMs);
       setSelectedPosition(null);
       await requestBotMove(nextBoard, currentPly + 1);
     } catch (error) {
@@ -328,6 +339,7 @@ export function NChessBoard() {
       });
       const payload = await response.json() as {
         board?: BoardState;
+        elapsedMs?: number;
         move?: Move | null;
         error?: string;
         detail?: string;
@@ -371,6 +383,7 @@ export function NChessBoard() {
 
       const payload = await response.json() as {
         board?: BoardState;
+        elapsedMs?: number;
         move?: Move | null;
         error?: string;
         detail?: string;
@@ -385,7 +398,7 @@ export function NChessBoard() {
 
       const botMove = payload.move;
       if (payload.board) {
-        commitMove(currentBoard, botMove, payload.board, "bot", basePly);
+        commitMove(currentBoard, botMove, payload.board, "bot", basePly, payload.elapsedMs);
       } else {
         const response = await fetch("/api/move", {
           method: "POST",
@@ -397,11 +410,11 @@ export function NChessBoard() {
             move: botMove,
           }),
         });
-        const movePayload = await response.json() as { board?: BoardState };
+        const movePayload = await response.json() as { board?: BoardState; elapsedMs?: number };
         if (!response.ok || !movePayload.board) {
           throw new Error("Bot move application failed");
         }
-        commitMove(currentBoard, botMove, movePayload.board, "bot", basePly);
+        commitMove(currentBoard, botMove, movePayload.board, "bot", basePly, movePayload.elapsedMs);
       }
     } catch (error) {
       setBotError(error instanceof Error ? error.message : "Bot request failed");
@@ -699,6 +712,7 @@ function HistoryPanel({
                 <span>{record.label}</span>
                 <span className="move-meta">
                   <span className="move-eval">{formatScore(record.evaluation)}</span>
+                  {typeof record.timeMs === "number" ? <span className="move-time">{formatTime(record.timeMs)}</span> : null}
                   <span className="move-actor">{record.actor}</span>
                 </span>
               </button>
@@ -986,6 +1000,10 @@ function sameBoard(left: BoardState, right: BoardState): boolean {
 
 function formatScore(score: number): string {
   return `${score >= 0 ? "+" : ""}${score.toFixed(1)}`;
+}
+
+function formatTime(timeMs: number): string {
+  return `${Math.round(timeMs)}ms`;
 }
 
 function cellLabel(position: Position, piece: Piece | undefined): string {

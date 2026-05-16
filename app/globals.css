@@ -554,7 +554,8 @@ button {
 
 .move-ply,
 .move-actor,
-.move-eval {
+.move-eval,
+.move-time {
   color: var(--brand);
   font-weight: 900;
 }
@@ -567,6 +568,12 @@ button {
 }
 
 .move-eval {
+  font-variant-numeric: tabular-nums;
+}
+
+.move-time {
+  color: var(--muted);
+  font-size: 0.68rem;
   font-variant-numeric: tabular-nums;
 }
 

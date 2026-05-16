@@ -130,13 +130,6 @@ def opponent_color(board: nBoard, color: Color) -> Color:
 def evaluate_position(board: nBoard, color: Color) -> float:
     rival_color = opponent_color(board, color)
 
-    if board.in_checkmate(color):
-        return -MATE_SCORE
-    if board.in_checkmate(rival_color):
-        return MATE_SCORE
-    if board.in_stalemate(color) or board.in_stalemate(rival_color):
-        return DRAW_SCORE
-
     return (
         material(board, color, rival_color)
         - 0.5 * (doubled_pawns(board, color) - doubled_pawns(board, rival_color))

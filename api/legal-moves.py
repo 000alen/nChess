@@ -1,4 +1,5 @@
 import json
+from time import perf_counter
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler
 
@@ -38,6 +39,7 @@ class handler(BaseHTTPRequestHandler):
 
 
 def legal_moves_request(request):
+    start = perf_counter()
     board_payload = request.get("board")
     position = request.get("position")
     if not isinstance(board_payload, dict):
@@ -49,12 +51,17 @@ def legal_moves_request(request):
 
     normalized_position = tuple(int(value) for value in position)
     if not board.contains(normalized_position):
-        return {"moves": []}
+        return {"moves": [], "elapsedMs": elapsed_ms(start)}
 
     piece = board.get(normalized_position)
     if piece.color != board.current_turn():
-        return {"moves": []}
+        return {"moves": [], "elapsedMs": elapsed_ms(start)}
 
     return {
         "moves": [serialize_move(move) for move in piece.moves()],
+        "elapsedMs": elapsed_ms(start),
     }
+
+
+def elapsed_ms(start):
+    return round((perf_counter() - start) * 1000, 2)
