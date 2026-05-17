@@ -632,9 +632,11 @@ export function NChessBoard() {
             onApply={startNewGame}
             onChange={setDraftConfig}
           />
-          {board.dimension >= 3 && viewMode === "isometric" ? (
+          {board.dimension >= 3 ? (
             <IsometricControls
               isoSpacing={isoSpacing}
+              showSpacing={viewMode === "isometric"}
+              viewMode={viewMode}
               onIsoSpacingChange={(value) => setIsoSpacing(clamp(value, ISO_SPACING_MIN, ISO_SPACING_MAX))}
               onResetCamera={() => setIsoCameraResetCounter((value) => value + 1)}
               onResetSpacing={() => setIsoSpacing(ISO_SPACING_DEFAULT)}
@@ -811,38 +813,50 @@ function IsometricControls({
   onIsoSpacingChange,
   onResetCamera,
   onResetSpacing,
+  showSpacing,
+  viewMode,
 }: {
   isoSpacing: number;
   onIsoSpacingChange: (value: number) => void;
   onResetCamera: () => void;
   onResetSpacing: () => void;
+  showSpacing: boolean;
+  viewMode: "flat" | "isometric";
 }) {
   return (
-    <section className="setup-card" aria-label="Isometric view controls">
+    <section className="setup-card" aria-label="3D scene controls">
       <div className="setup-heading">
-        <h3>Isometric view</h3>
-        <span>3D scene</span>
+        <h3>3D scene</h3>
+        <span>{viewMode === "isometric" ? "Isometric" : "Flat"}</span>
       </div>
-      <label className="field">
-        <span>Slice spacing {Math.round(isoSpacing * 100)}%</span>
-        <input
-          type="range"
-          min={ISO_SPACING_MIN * 100}
-          max={ISO_SPACING_MAX * 100}
-          step={1}
-          value={Math.round(isoSpacing * 100)}
-          onChange={(event) => onIsoSpacingChange(Number(event.target.value) / 100)}
-        />
-      </label>
+      {showSpacing ? (
+        <label className="field">
+          <span>Slice spacing {Math.round(isoSpacing * 100)}%</span>
+          <input
+            type="range"
+            min={ISO_SPACING_MIN * 100}
+            max={ISO_SPACING_MAX * 100}
+            step={1}
+            value={Math.round(isoSpacing * 100)}
+            onChange={(event) => onIsoSpacingChange(Number(event.target.value) / 100)}
+          />
+        </label>
+      ) : null}
       <div className="axis-grid">
-        <button className="secondary-button compact" type="button" onClick={onResetSpacing}>
-          Reset spacing
-        </button>
+        {showSpacing ? (
+          <button className="secondary-button compact" type="button" onClick={onResetSpacing}>
+            Reset spacing
+          </button>
+        ) : null}
         <button className="secondary-button compact" type="button" onClick={onResetCamera}>
           Reset camera
         </button>
       </div>
-      <p className="setup-note">Drag to orbit, scroll to zoom, right-drag to pan. Selected piece is marked with a yellow ring + tall beacon. Hint moves render as orange arcs; analysis as cyan dashed arcs.</p>
+      <p className="setup-note">
+        {viewMode === "isometric"
+          ? "Iso: drag to orbit, scroll to zoom, right-drag to pan. Hint moves render as orange arcs across slices; analysis as cyan dashed."
+          : "Flat: scroll to zoom, right-drag to pan. Toggle to Isometric to lift the boards into a 3D stack."}
+      </p>
     </section>
   );
 }

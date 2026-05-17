@@ -22,8 +22,8 @@ const SLICE_GAP_DEFAULT = 3.4;
 const W_GAP_DEFAULT = 2.4;
 const PIECE_LIFT = TILE_THICKNESS / 2 + 0.02;
 const FLAT_GAP = 0.5;
-const TRANSITION_LERP_FACTOR = 0.12;
-const TRANSITION_DURATION_MS = 800;
+const TRANSITION_LERP_FACTOR = 0.045;
+const TRANSITION_DURATION_MS = 1400;
 
 export type ViewMode = "flat" | "isometric";
 
@@ -78,7 +78,7 @@ export function BoardScene3D({
 
   const flatCameraPosition = useMemo<[number, number, number]>(() => {
     const distance = flatSceneSpan * 1.05 + 5;
-    return [0.001, distance, 0.001];
+    return [0, distance, distance * 0.04];
   }, [flatSceneSpan]);
 
   const isoTarget = useMemo<[number, number, number]>(() => {
@@ -87,13 +87,22 @@ export function BoardScene3D({
 
   const flatTarget = useMemo<[number, number, number]>(() => [0, 0, 0], []);
 
-  const initialCameraPosition = viewMode === "isometric" ? isoCameraPosition : flatCameraPosition;
+  const [initialCameraPosition] = useState<[number, number, number]>(() =>
+    viewMode === "isometric" ? isoCameraPosition : flatCameraPosition,
+  );
+  const initialCameraPropRef = useRef({
+    position: initialCameraPosition,
+    fov: 36,
+    near: 0.1,
+    far: 400,
+  });
 
   return (
     <>
       <Canvas
-        camera={{ position: initialCameraPosition, fov: 36, near: 0.1, far: 400 }}
+        camera={initialCameraPropRef.current}
         dpr={[1, 2]}
+        frameloop="always"
         shadows
         style={{ width: "100%", height: "100%" }}
       >
@@ -501,22 +510,32 @@ function CameraRig({
   useFrame(() => {
     if (transitionStartRef.current === 0) return;
     const elapsed = performance.now() - transitionStartRef.current;
+    type DreiControls = {
+      target?: THREE.Vector3;
+      update?: () => void;
+      enabled?: boolean;
+    };
+    const controls = controlsRef.current as DreiControls | null;
     if (elapsed > TRANSITION_DURATION_MS) {
       camera.position.copy(targetCameraPos);
-      const controls = controlsRef.current as { target?: THREE.Vector3; update?: () => void } | null;
       if (controls?.target) {
         controls.target.copy(targetControlsTarget);
+      }
+      if (controls) {
+        controls.enabled = true;
         controls.update?.();
       }
       transitionStartRef.current = 0;
       return;
     }
+    if (controls && controls.enabled !== false) {
+      controls.enabled = false;
+    }
     camera.position.lerp(targetCameraPos, TRANSITION_LERP_FACTOR);
-    const controls = controlsRef.current as { target?: THREE.Vector3; update?: () => void } | null;
     if (controls?.target) {
       controls.target.lerp(targetControlsTarget, TRANSITION_LERP_FACTOR);
-      controls.update?.();
     }
+    camera.lookAt(controls?.target ?? targetControlsTarget);
   });
 
   return null;
