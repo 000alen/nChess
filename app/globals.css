@@ -128,10 +128,41 @@ button {
   padding: 12px;
 }
 
+.board-stack[data-view-mode="isometric"] {
+  padding: 0;
+}
+
+.top-bar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .slice-grid {
   display: grid;
   gap: 8px;
   grid-template-columns: repeat(var(--slice-columns), minmax(118px, 1fr));
+}
+
+.iso-canvas-shell {
+  background:
+    radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.04), transparent 55%),
+    linear-gradient(180deg, #0d1117 0%, #161b22 100%);
+  border: 1px solid var(--border);
+  height: clamp(420px, 70vh, 720px);
+  position: relative;
+  width: 100%;
+}
+
+.iso-html-passthrough,
+.iso-html-passthrough * {
+  pointer-events: none !important;
+}
+
+.page-shell[data-theme="light"] .iso-canvas-shell {
+  background:
+    radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.6), transparent 55%),
+    linear-gradient(180deg, #e9ecef 0%, #cdd2d8 100%);
 }
 
 .slice {
@@ -610,6 +641,10 @@ button {
   .slice-grid {
     grid-template-columns: repeat(var(--slice-columns), minmax(92px, 1fr));
   }
+
+  .iso-canvas-shell {
+    height: clamp(360px, 60vh, 540px);
+  }
 }
 
 @media (max-width: 720px) {
@@ -636,6 +671,10 @@ button {
     gap: 6px;
     grid-template-columns: repeat(var(--slice-columns), minmax(138px, 1fr));
     min-width: 300px;
+  }
+
+  .iso-canvas-shell {
+    height: clamp(320px, 55vh, 460px);
   }
 
   .cell {

@@ -1,6 +1,7 @@
 "use client";
 
 import type { CSSProperties } from "react";
+import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
 
 import {
@@ -27,6 +28,11 @@ type Slice = {
   coordinates: Position;
   label: string;
 };
+
+const BoardScene3D = dynamic(
+  () => import("@/components/iso-scene").then((mod) => mod.BoardScene3D),
+  { ssr: false },
+);
 
 type MoveActor = "human" | "bot";
 
@@ -80,8 +86,14 @@ type ApiFailurePayload = {
 };
 
 type Theme = "dark" | "light";
+type ViewMode = "flat" | "isometric";
 type PromotionKind = Exclude<PieceKind, "king" | "pawn">;
 const THEME_STORAGE_KEY = "nchess-theme";
+const VIEW_MODE_STORAGE_KEY = "nchess-view-mode";
+const ISO_SPACING_STORAGE_KEY = "nchess-iso-spacing";
+const ISO_SPACING_MIN = 0.4;
+const ISO_SPACING_MAX = 2.0;
+const ISO_SPACING_DEFAULT = 1.0;
 const BOARD_PRESETS: Array<{ label: string; config: BoardConfig }> = [
   { label: "2D Classic", config: { dimension: 2, size: [8, 8] } },
   { label: "3D Compact", config: { dimension: 3, size: [5, 5, 4] } },
@@ -97,6 +109,11 @@ export function NChessBoard() {
   const [currentPly, setCurrentPly] = useState(0);
   const [theme, setTheme] = useState<Theme>("dark");
   const [themeLoaded, setThemeLoaded] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>("flat");
+  const [viewModeLoaded, setViewModeLoaded] = useState(false);
+  const [isoSpacing, setIsoSpacing] = useState<number>(ISO_SPACING_DEFAULT);
+  const [isoLoaded, setIsoLoaded] = useState(false);
+  const [isoCameraResetCounter, setIsoCameraResetCounter] = useState(0);
   const [botEnabled, setBotEnabled] = useState(true);
   const [botColor, setBotColor] = useState<PieceColor>("black");
   const [botDepth, setBotDepth] = useState(2);
@@ -189,6 +206,36 @@ export function NChessBoard() {
     setTheme(window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
     setThemeLoaded(true);
   }, []);
+
+  useEffect(() => {
+    if (!viewModeLoaded) {
+      return;
+    }
+    window.localStorage.setItem(VIEW_MODE_STORAGE_KEY, viewMode);
+  }, [viewMode, viewModeLoaded]);
+
+  useEffect(() => {
+    const savedViewMode = window.localStorage.getItem(VIEW_MODE_STORAGE_KEY);
+    if (savedViewMode === "flat" || savedViewMode === "isometric") {
+      setViewMode(savedViewMode);
+    }
+    setViewModeLoaded(true);
+  }, []);
+
+  useEffect(() => {
+    const savedSpacing = Number(window.localStorage.getItem(ISO_SPACING_STORAGE_KEY));
+    if (Number.isFinite(savedSpacing) && savedSpacing > 0) {
+      setIsoSpacing(clamp(savedSpacing, ISO_SPACING_MIN, ISO_SPACING_MAX));
+    }
+    setIsoLoaded(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isoLoaded) {
+      return;
+    }
+    window.localStorage.setItem(ISO_SPACING_STORAGE_KEY, String(isoSpacing));
+  }, [isoLoaded, isoSpacing]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -500,35 +547,64 @@ export function NChessBoard() {
           <p className="brand-kicker">nChess</p>
           <strong>{board.dimension}D Chess Arena</strong>
         </div>
-        <button
-          className="theme-toggle"
-          type="button"
-          aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
-          onClick={() => setTheme((currentTheme) => (currentTheme === "dark" ? "light" : "dark"))}
-        >
-          {theme === "dark" ? "Light mode" : "Dark mode"}
-        </button>
+        <div className="top-bar-actions">
+          {board.dimension >= 3 ? (
+            <button
+              className="theme-toggle"
+              type="button"
+              aria-pressed={viewMode === "isometric"}
+              aria-label={`Switch to ${viewMode === "isometric" ? "flat" : "isometric"} view`}
+              onClick={() => setViewMode((current) => (current === "isometric" ? "flat" : "isometric"))}
+            >
+              {viewMode === "isometric" ? "Flat view" : "Isometric"}
+            </button>
+          ) : null}
+          <button
+            className="theme-toggle"
+            type="button"
+            aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+            onClick={() => setTheme((currentTheme) => (currentTheme === "dark" ? "light" : "dark"))}
+          >
+            {theme === "dark" ? "Light mode" : "Dark mode"}
+          </button>
+        </div>
       </header>
 
       <section className="game-layout" aria-label="nChess game">
-        <div className="board-stack">
-          <div className="slice-grid" style={{ "--slice-columns": sliceColumnCount(board) } as CSSProperties}>
-            {slicesForBoard(board).map((slice) => (
-              <BoardSlice
-                key={slice.coordinates.join(",") || "2d"}
+        <div className="board-stack" data-view-mode={board.dimension >= 3 ? viewMode : "flat"}>
+          {board.dimension >= 3 ? (
+            <div className="iso-canvas-shell" key={`iso-${isoCameraResetCounter}`}>
+              <BoardScene3D
+                analysisMove={analysisMove}
                 board={board}
                 canHumanMove={canHumanMove}
                 hintMove={hintMove}
-                slice={slice}
                 selectedMoves={selectedMoves}
                 selectedPosition={selectedPosition}
+                spacing={isoSpacing}
+                viewMode={viewMode}
                 onCellClick={handleCellClick}
-                onDropMove={(from, to) => {
-                  void requestHumanMove({ from, to });
-                }}
               />
-            ))}
-          </div>
+            </div>
+          ) : (
+            <div className="slice-grid" style={{ "--slice-columns": sliceColumnCount(board) } as CSSProperties}>
+              {slicesForBoard(board).map((slice) => (
+                <BoardSlice
+                  key={slice.coordinates.join(",") || "2d"}
+                  board={board}
+                  canHumanMove={canHumanMove}
+                  hintMove={hintMove}
+                  slice={slice}
+                  selectedMoves={selectedMoves}
+                  selectedPosition={selectedPosition}
+                  onCellClick={handleCellClick}
+                  onDropMove={(from, to) => {
+                    void requestHumanMove({ from, to });
+                  }}
+                />
+              ))}
+            </div>
+          )}
         </div>
 
         <aside className="side-panel">
@@ -556,6 +632,16 @@ export function NChessBoard() {
             onApply={startNewGame}
             onChange={setDraftConfig}
           />
+          {board.dimension >= 3 ? (
+            <IsometricControls
+              isoSpacing={isoSpacing}
+              showSpacing={viewMode === "isometric"}
+              viewMode={viewMode}
+              onIsoSpacingChange={(value) => setIsoSpacing(clamp(value, ISO_SPACING_MIN, ISO_SPACING_MAX))}
+              onResetCamera={() => setIsoCameraResetCounter((value) => value + 1)}
+              onResetSpacing={() => setIsoSpacing(ISO_SPACING_DEFAULT)}
+            />
+          ) : null}
           <BotSettings
             botColor={botColor}
             depth={botDepth}
@@ -718,6 +804,59 @@ function BoardSetup({
         New {normalizedConfig.dimension}D game
       </button>
       <p className="setup-note">Generated starts require at least 4 cells per axis.</p>
+    </section>
+  );
+}
+
+function IsometricControls({
+  isoSpacing,
+  onIsoSpacingChange,
+  onResetCamera,
+  onResetSpacing,
+  showSpacing,
+  viewMode,
+}: {
+  isoSpacing: number;
+  onIsoSpacingChange: (value: number) => void;
+  onResetCamera: () => void;
+  onResetSpacing: () => void;
+  showSpacing: boolean;
+  viewMode: "flat" | "isometric";
+}) {
+  return (
+    <section className="setup-card" aria-label="3D scene controls">
+      <div className="setup-heading">
+        <h3>3D scene</h3>
+        <span>{viewMode === "isometric" ? "Isometric" : "Flat"}</span>
+      </div>
+      {showSpacing ? (
+        <label className="field">
+          <span>Slice spacing {Math.round(isoSpacing * 100)}%</span>
+          <input
+            type="range"
+            min={ISO_SPACING_MIN * 100}
+            max={ISO_SPACING_MAX * 100}
+            step={1}
+            value={Math.round(isoSpacing * 100)}
+            onChange={(event) => onIsoSpacingChange(Number(event.target.value) / 100)}
+          />
+        </label>
+      ) : null}
+      <div className="axis-grid">
+        {showSpacing ? (
+          <button className="secondary-button compact" type="button" onClick={onResetSpacing}>
+            Reset spacing
+          </button>
+        ) : null}
+        <button className="secondary-button compact" type="button" onClick={onResetCamera}>
+          Reset camera
+        </button>
+      </div>
+      <p className="setup-note">
+        {viewMode === "isometric"
+          ? "Iso: drag to orbit, scroll to zoom, right-drag to pan. Hint moves render as orange arcs across slices; analysis as cyan dashed."
+          : "Flat: scroll to zoom, right-drag to pan. Toggle to Isometric to lift the boards into a 3D stack."}
+      </p>
     </section>
   );
 }
