@@ -142,7 +142,10 @@ button {
 
 .iso-grid {
   --iso-slice-size: 240px;
-  --iso-stack-offset: 46px;
+  --iso-tilt: 52deg;
+  --iso-spacing-ratio: 0.58;
+  --iso-stack-offset: calc(var(--iso-slice-size) * var(--iso-spacing-ratio));
+  --iso-lift: calc(var(--iso-slice-size) * 0.45);
   display: grid;
   gap: 28px;
   grid-template-columns: repeat(var(--iso-columns), minmax(0, 1fr));
@@ -155,8 +158,9 @@ button {
   position: relative;
   width: calc(var(--iso-slice-size) * 1.45);
   min-height: calc(
-    var(--iso-slice-size) * 0.78
+    var(--iso-slice-size) * 0.85
     + var(--iso-stack-offset) * max(var(--iso-stack-count) - 1, 0)
+    + var(--iso-lift)
     + 36px
   );
   margin-top: 24px;
@@ -183,7 +187,7 @@ button {
 .iso-stage {
   bottom: 0;
   height: calc(
-    var(--iso-slice-size) * 0.78
+    var(--iso-slice-size) * 0.85
     + var(--iso-stack-offset) * max(var(--iso-stack-count) - 1, 0)
   );
   left: 50%;
@@ -194,19 +198,22 @@ button {
 
 .iso-slice {
   --iso-level: 0;
-  bottom: calc(var(--iso-stack-offset) * var(--iso-level));
+  --iso-lift-current: 0px;
+  bottom: calc(var(--iso-stack-offset) * var(--iso-level) + var(--iso-lift-current));
   height: var(--iso-slice-size);
   left: 50%;
   position: absolute;
   transform: translateX(-50%);
+  transition: bottom 220ms ease, z-index 0s;
   width: var(--iso-slice-size);
+  z-index: calc(10 + var(--iso-level));
 }
 
 .iso-slice-board {
   height: 100%;
-  transform: rotateX(58deg) rotateZ(-45deg);
+  transform: rotateX(var(--iso-tilt)) rotateZ(-45deg);
   transform-origin: center bottom;
-  transition: transform 200ms ease;
+  transition: transform 220ms ease, filter 220ms ease;
   width: 100%;
 }
 
@@ -244,8 +251,28 @@ button {
   z-index: 6;
 }
 
+.iso-slice[data-target="true"] .iso-slice-tag {
+  background: color-mix(in srgb, var(--brand) 55%, var(--surface));
+  border-color: var(--brand);
+}
+
+.iso-slice[data-active="true"] {
+  --iso-lift-current: var(--iso-lift);
+  z-index: calc(60 + var(--iso-level));
+}
+
+.iso-slice[data-active="true"] .iso-slice-board {
+  filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.55));
+  transform: rotateX(calc(var(--iso-tilt) - 12deg)) rotateZ(-45deg);
+}
+
+.iso-slice:hover {
+  --iso-lift-current: var(--iso-lift);
+  z-index: calc(80 + var(--iso-level));
+}
+
 .iso-slice:hover .iso-slice-board {
-  transform: rotateX(54deg) rotateZ(-45deg);
+  transform: rotateX(calc(var(--iso-tilt) - 8deg)) rotateZ(-45deg);
 }
 
 .slice {
@@ -727,7 +754,6 @@ button {
 
   .iso-grid {
     --iso-slice-size: 200px;
-    --iso-stack-offset: 38px;
   }
 }
 
@@ -759,7 +785,6 @@ button {
 
   .iso-grid {
     --iso-slice-size: 180px;
-    --iso-stack-offset: 32px;
     grid-template-columns: 1fr;
   }
 

@@ -84,6 +84,14 @@ type ViewMode = "flat" | "isometric";
 type PromotionKind = Exclude<PieceKind, "king" | "pawn">;
 const THEME_STORAGE_KEY = "nchess-theme";
 const VIEW_MODE_STORAGE_KEY = "nchess-view-mode";
+const ISO_TILT_STORAGE_KEY = "nchess-iso-tilt";
+const ISO_SPACING_STORAGE_KEY = "nchess-iso-spacing";
+const ISO_TILT_MIN = 35;
+const ISO_TILT_MAX = 62;
+const ISO_TILT_DEFAULT = 52;
+const ISO_SPACING_MIN = 0.25;
+const ISO_SPACING_MAX = 1.2;
+const ISO_SPACING_DEFAULT = 0.58;
 const BOARD_PRESETS: Array<{ label: string; config: BoardConfig }> = [
   { label: "2D Classic", config: { dimension: 2, size: [8, 8] } },
   { label: "3D Compact", config: { dimension: 3, size: [5, 5, 4] } },
@@ -101,6 +109,9 @@ export function NChessBoard() {
   const [themeLoaded, setThemeLoaded] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("flat");
   const [viewModeLoaded, setViewModeLoaded] = useState(false);
+  const [isoTilt, setIsoTilt] = useState<number>(ISO_TILT_DEFAULT);
+  const [isoSpacing, setIsoSpacing] = useState<number>(ISO_SPACING_DEFAULT);
+  const [isoLoaded, setIsoLoaded] = useState(false);
   const [botEnabled, setBotEnabled] = useState(true);
   const [botColor, setBotColor] = useState<PieceColor>("black");
   const [botDepth, setBotDepth] = useState(2);
@@ -208,6 +219,26 @@ export function NChessBoard() {
     }
     setViewModeLoaded(true);
   }, []);
+
+  useEffect(() => {
+    const savedTilt = Number(window.localStorage.getItem(ISO_TILT_STORAGE_KEY));
+    if (Number.isFinite(savedTilt) && savedTilt > 0) {
+      setIsoTilt(clamp(savedTilt, ISO_TILT_MIN, ISO_TILT_MAX));
+    }
+    const savedSpacing = Number(window.localStorage.getItem(ISO_SPACING_STORAGE_KEY));
+    if (Number.isFinite(savedSpacing) && savedSpacing > 0) {
+      setIsoSpacing(clamp(savedSpacing, ISO_SPACING_MIN, ISO_SPACING_MAX));
+    }
+    setIsoLoaded(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isoLoaded) {
+      return;
+    }
+    window.localStorage.setItem(ISO_TILT_STORAGE_KEY, String(isoTilt));
+    window.localStorage.setItem(ISO_SPACING_STORAGE_KEY, String(isoSpacing));
+  }, [isoLoaded, isoSpacing, isoTilt]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -549,6 +580,8 @@ export function NChessBoard() {
               board={board}
               canHumanMove={canHumanMove}
               hintMove={hintMove}
+              isoSpacing={isoSpacing}
+              isoTilt={isoTilt}
               selectedMoves={selectedMoves}
               selectedPosition={selectedPosition}
               onCellClick={handleCellClick}
@@ -602,6 +635,18 @@ export function NChessBoard() {
             onApply={startNewGame}
             onChange={setDraftConfig}
           />
+          {board.dimension >= 3 && viewMode === "isometric" ? (
+            <IsometricControls
+              isoSpacing={isoSpacing}
+              isoTilt={isoTilt}
+              onIsoSpacingChange={(value) => setIsoSpacing(clamp(value, ISO_SPACING_MIN, ISO_SPACING_MAX))}
+              onIsoTiltChange={(value) => setIsoTilt(clamp(value, ISO_TILT_MIN, ISO_TILT_MAX))}
+              onReset={() => {
+                setIsoTilt(ISO_TILT_DEFAULT);
+                setIsoSpacing(ISO_SPACING_DEFAULT);
+              }}
+            />
+          ) : null}
           <BotSettings
             botColor={botColor}
             depth={botDepth}
@@ -764,6 +809,55 @@ function BoardSetup({
         New {normalizedConfig.dimension}D game
       </button>
       <p className="setup-note">Generated starts require at least 4 cells per axis.</p>
+    </section>
+  );
+}
+
+function IsometricControls({
+  isoSpacing,
+  isoTilt,
+  onIsoSpacingChange,
+  onIsoTiltChange,
+  onReset,
+}: {
+  isoSpacing: number;
+  isoTilt: number;
+  onIsoSpacingChange: (value: number) => void;
+  onIsoTiltChange: (value: number) => void;
+  onReset: () => void;
+}) {
+  return (
+    <section className="setup-card" aria-label="Isometric view controls">
+      <div className="setup-heading">
+        <h3>Isometric view</h3>
+        <span>Tilt &amp; gap</span>
+      </div>
+      <label className="field">
+        <span>Tilt {Math.round(isoTilt)}°</span>
+        <input
+          type="range"
+          min={ISO_TILT_MIN}
+          max={ISO_TILT_MAX}
+          step={1}
+          value={isoTilt}
+          onChange={(event) => onIsoTiltChange(Number(event.target.value))}
+        />
+      </label>
+      <label className="field">
+        <span>Spacing {Math.round(isoSpacing * 100)}%</span>
+        <input
+          type="range"
+          min={ISO_SPACING_MIN * 100}
+          max={ISO_SPACING_MAX * 100}
+          step={1}
+          value={Math.round(isoSpacing * 100)}
+          onChange={(event) => onIsoSpacingChange(Number(event.target.value) / 100)}
+        />
+      </label>
+      <button className="secondary-button compact" type="button" onClick={onReset}>
+        Reset view
+      </button>
+      <p className="setup-note">Lower tilt and bigger spacing reveal more cells. Hover a slice to lift it; the slice with the selected piece auto-lifts.</p>
     </section>
   );
 }
@@ -1063,6 +1157,8 @@ function IsometricStacks({
   board,
   canHumanMove,
   hintMove,
+  isoSpacing,
+  isoTilt,
   selectedMoves,
   selectedPosition,
   onCellClick,
@@ -1071,12 +1167,19 @@ function IsometricStacks({
   board: BoardState;
   canHumanMove: boolean;
   hintMove: Move | null;
+  isoSpacing: number;
+  isoTilt: number;
   selectedMoves: Move[];
   selectedPosition: Position | null;
   onCellClick: (position: Position) => void | Promise<void>;
   onDropMove: (from: Position, to: Position) => void;
 }) {
   const zCount = board.size[2];
+  const gridStyle = {
+    "--iso-columns": board.dimension === 3 ? 1 : Math.min(board.size[3], 2),
+    "--iso-tilt": `${isoTilt}deg`,
+    "--iso-spacing-ratio": isoSpacing,
+  } as CSSProperties;
 
   if (board.dimension === 3) {
     const slices = Array.from({ length: zCount }, (_, z) => ({
@@ -1084,7 +1187,7 @@ function IsometricStacks({
       label: `z=${z}`,
     }));
     return (
-      <div className="iso-grid" style={{ "--iso-columns": 1 } as CSSProperties}>
+      <div className="iso-grid" style={gridStyle}>
         <IsometricStack
           board={board}
           canHumanMove={canHumanMove}
@@ -1102,10 +1205,7 @@ function IsometricStacks({
 
   const wCount = board.size[3];
   return (
-    <div
-      className="iso-grid"
-      style={{ "--iso-columns": Math.min(wCount, 2) } as CSSProperties}
-    >
+    <div className="iso-grid" style={gridStyle}>
       {Array.from({ length: wCount }, (_, w) => {
         const slices = Array.from({ length: zCount }, (_, z) => ({
           coordinates: [z, w] as Position,
@@ -1154,19 +1254,31 @@ function IsometricStack({
   const stackStyle = {
     "--iso-stack-count": slices.length,
   } as CSSProperties;
+  const selectedSliceCoords = selectedPosition ? selectedPosition.slice(2) : null;
+  const moveTargetSliceKeys = new Set<string>();
+  for (const move of selectedMoves) {
+    moveTargetSliceKeys.add(move.to.slice(2).join(","));
+  }
 
   return (
     <div className="iso-stack" style={stackStyle}>
       <span className="iso-stack-label">{label}</span>
       <div className="iso-stage">
         {slices.map((slice, index) => {
+          const sliceKey = slice.coordinates.join(",");
+          const isActive = Boolean(
+            selectedSliceCoords && positionsEqual(selectedSliceCoords, slice.coordinates),
+          );
+          const isMoveTarget = moveTargetSliceKeys.has(sliceKey);
           const sliceStyle = {
             "--iso-level": index,
           } as CSSProperties;
           return (
             <div
               className="iso-slice"
-              key={slice.coordinates.join(",") || "0"}
+              data-active={isActive ? "true" : undefined}
+              data-target={isMoveTarget ? "true" : undefined}
+              key={sliceKey || "0"}
               style={sliceStyle}
             >
               <span className="iso-slice-tag">{slice.label}</span>
