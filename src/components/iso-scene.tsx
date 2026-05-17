@@ -1,6 +1,6 @@
 "use client";
 
-import { Canvas, useThree } from "@react-three/fiber";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Html, Line, OrbitControls, type OrbitControlsProps } from "@react-three/drei";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
@@ -21,6 +21,11 @@ const TILE_THICKNESS = 0.1;
 const SLICE_GAP_DEFAULT = 3.4;
 const W_GAP_DEFAULT = 2.4;
 const PIECE_LIFT = TILE_THICKNESS / 2 + 0.02;
+const FLAT_GAP = 0.5;
+const TRANSITION_LERP_FACTOR = 0.12;
+const TRANSITION_DURATION_MS = 800;
+
+export type ViewMode = "flat" | "isometric";
 
 const COLOR_LIGHT_SQUARE = "#eeeed2";
 const COLOR_DARK_SQUARE = "#769656";
@@ -31,7 +36,7 @@ const COLOR_CAPTURE = "#ef4444";
 const COLOR_HINT = "#f59e0b";
 const COLOR_ANALYSIS = "#22d3ee";
 
-type IsoSceneProps = {
+type BoardScene3DProps = {
   analysisMove: Move | null;
   board: BoardState;
   canHumanMove: boolean;
@@ -40,9 +45,10 @@ type IsoSceneProps = {
   selectedMoves: Move[];
   selectedPosition: Position | null;
   spacing: number;
+  viewMode: ViewMode;
 };
 
-export function IsoScene({
+export function BoardScene3D({
   analysisMove,
   board,
   canHumanMove,
@@ -51,7 +57,8 @@ export function IsoScene({
   selectedMoves,
   selectedPosition,
   spacing,
-}: IsoSceneProps) {
+  viewMode,
+}: BoardScene3DProps) {
   const cols = board.size[0];
   const rows = board.size[1];
   const sliceCount = board.size[2] ?? 1;
@@ -61,21 +68,31 @@ export function IsoScene({
   const wGap = W_GAP_DEFAULT * spacing;
   const stackHeight = (sliceCount - 1) * sliceGap;
   const stackWidthW = wCount > 1 ? (wCount - 1) * (cols + wGap) : 0;
-  const sceneSpan = Math.max(stackWidthW + cols, sliceCount * sliceGap, cols, rows);
+  const isoSceneSpan = Math.max(stackWidthW + cols, sliceCount * sliceGap, cols, rows);
+  const flatSceneSpan = computeFlatSceneSpan(board, cols, rows, sliceCount, wCount);
 
-  const cameraPosition = useMemo<[number, number, number]>(() => {
-    const distance = sceneSpan * 1.45 + 6;
+  const isoCameraPosition = useMemo<[number, number, number]>(() => {
+    const distance = isoSceneSpan * 1.45 + 6;
     return [distance * 0.65, distance * 0.55, distance * 0.85];
-  }, [sceneSpan]);
+  }, [isoSceneSpan]);
 
-  const target = useMemo<[number, number, number]>(() => {
+  const flatCameraPosition = useMemo<[number, number, number]>(() => {
+    const distance = flatSceneSpan * 1.05 + 5;
+    return [0.001, distance, 0.001];
+  }, [flatSceneSpan]);
+
+  const isoTarget = useMemo<[number, number, number]>(() => {
     return [0, stackHeight / 2, 0];
   }, [stackHeight]);
+
+  const flatTarget = useMemo<[number, number, number]>(() => [0, 0, 0], []);
+
+  const initialCameraPosition = viewMode === "isometric" ? isoCameraPosition : flatCameraPosition;
 
   return (
     <>
       <Canvas
-        camera={{ position: cameraPosition, fov: 36, near: 0.1, far: 400 }}
+        camera={{ position: initialCameraPosition, fov: 36, near: 0.1, far: 400 }}
         dpr={[1, 2]}
         shadows
         style={{ width: "100%", height: "100%" }}
@@ -85,16 +102,19 @@ export function IsoScene({
             analysisMove={analysisMove}
             board={board}
             canHumanMove={canHumanMove}
-            cameraPosition={cameraPosition}
             cols={cols}
+            flatCameraPosition={flatCameraPosition}
+            flatTarget={flatTarget}
             hintMove={hintMove}
+            isoCameraPosition={isoCameraPosition}
+            isoTarget={isoTarget}
             onCellClick={onCellClick}
             rows={rows}
             selectedMoves={selectedMoves}
             selectedPosition={selectedPosition}
             sliceCount={sliceCount}
             sliceGap={sliceGap}
-            target={target}
+            viewMode={viewMode}
             wCount={wCount}
             wGap={wGap}
           />
@@ -110,45 +130,47 @@ function SceneContents({
   analysisMove,
   board,
   canHumanMove,
-  cameraPosition,
   cols,
+  flatCameraPosition,
+  flatTarget,
   hintMove,
+  isoCameraPosition,
+  isoTarget,
   onCellClick,
   rows,
   selectedMoves,
   selectedPosition,
   sliceCount,
   sliceGap,
-  target,
+  viewMode,
   wCount,
   wGap,
 }: {
   analysisMove: Move | null;
   board: BoardState;
   canHumanMove: boolean;
-  cameraPosition: [number, number, number];
   cols: number;
+  flatCameraPosition: [number, number, number];
+  flatTarget: [number, number, number];
   hintMove: Move | null;
+  isoCameraPosition: [number, number, number];
+  isoTarget: [number, number, number];
   onCellClick: (position: Position) => void | Promise<void>;
   rows: number;
   selectedMoves: Move[];
   selectedPosition: Position | null;
   sliceCount: number;
   sliceGap: number;
-  target: [number, number, number];
+  viewMode: ViewMode;
   wCount: number;
   wGap: number;
 }) {
   const controlsRef = useRef<OrbitControlsProps>(null);
 
-  useEffect(() => {
-    const controls = controlsRef.current;
-    if (controls && typeof (controls as { update?: () => void }).update === "function") {
-      (controls as { update: () => void }).update();
-    }
-  }, [target]);
-
-  const slices = useMemo(() => buildSliceDescriptors(board, sliceGap, wGap), [board, sliceGap, wGap]);
+  const slices = useMemo(
+    () => buildSliceDescriptors(board, sliceGap, wGap, viewMode),
+    [board, sliceGap, wGap, viewMode],
+  );
   const legalTargetKeys = useMemo(() => {
     const keys = new Set<string>();
     for (const move of selectedMoves) {
@@ -199,10 +221,19 @@ function SceneContents({
         dampingFactor={0.08}
         enableDamping
         enablePan
+        enableRotate={viewMode === "isometric"}
         makeDefault
-        maxDistance={120}
+        maxDistance={160}
         minDistance={6}
-        target={target}
+      />
+
+      <CameraRig
+        controlsRef={controlsRef}
+        flatCameraPosition={flatCameraPosition}
+        flatTarget={flatTarget}
+        isoCameraPosition={isoCameraPosition}
+        isoTarget={isoTarget}
+        viewMode={viewMode}
       />
 
       {slices.map((slice) => (
@@ -358,28 +389,137 @@ function CanvasInputBridge({
 type SliceDescriptor = {
   z: number;
   w: number;
+  isoOrigin: [number, number, number];
+  flatOrigin: [number, number, number];
   origin: [number, number, number];
   label: string;
 };
 
-function buildSliceDescriptors(board: BoardState, sliceGap: number, wGap: number): SliceDescriptor[] {
+function buildSliceDescriptors(
+  board: BoardState,
+  sliceGap: number,
+  wGap: number,
+  viewMode: ViewMode,
+): SliceDescriptor[] {
   const cols = board.size[0];
+  const rows = board.size[1];
   const sliceCount = board.size[2] ?? 1;
   const wCount = board.dimension >= 4 ? board.size[3] ?? 1 : 1;
   const result: SliceDescriptor[] = [];
 
   for (let w = 0; w < wCount; w += 1) {
-    const baseX = (w - (wCount - 1) / 2) * (cols + wGap);
+    const isoBaseX = (w - (wCount - 1) / 2) * (cols + wGap);
     for (let z = 0; z < sliceCount; z += 1) {
+      const isoOrigin: [number, number, number] = [isoBaseX, z * sliceGap, 0];
+      let flatOrigin: [number, number, number];
+      if (board.dimension === 3) {
+        const flatX = (z - (sliceCount - 1) / 2) * (cols + FLAT_GAP);
+        flatOrigin = [flatX, 0, 0];
+      } else {
+        const flatX = (w - (wCount - 1) / 2) * (cols + FLAT_GAP);
+        const flatZ = ((sliceCount - 1) / 2 - z) * (rows + FLAT_GAP);
+        flatOrigin = [flatX, 0, flatZ];
+      }
+
+      const origin = viewMode === "flat" ? flatOrigin : isoOrigin;
       result.push({
         z,
         w,
-        origin: [baseX, z * sliceGap, 0],
+        isoOrigin,
+        flatOrigin,
+        origin,
         label: board.dimension === 3 ? `z=${z}` : `z=${z} · w=${w}`,
       });
     }
   }
   return result;
+}
+
+function computeFlatSceneSpan(
+  board: BoardState,
+  cols: number,
+  rows: number,
+  sliceCount: number,
+  wCount: number,
+): number {
+  if (board.dimension === 3) {
+    return Math.max(rows, sliceCount * (cols + FLAT_GAP));
+  }
+  const widthSpan = wCount * (cols + FLAT_GAP);
+  const depthSpan = sliceCount * (rows + FLAT_GAP);
+  return Math.max(widthSpan, depthSpan);
+}
+
+function CameraRig({
+  controlsRef,
+  flatCameraPosition,
+  flatTarget,
+  isoCameraPosition,
+  isoTarget,
+  viewMode,
+}: {
+  controlsRef: React.RefObject<OrbitControlsProps | null>;
+  flatCameraPosition: [number, number, number];
+  flatTarget: [number, number, number];
+  isoCameraPosition: [number, number, number];
+  isoTarget: [number, number, number];
+  viewMode: ViewMode;
+}) {
+  const { camera } = useThree();
+  const transitionStartRef = useRef(0);
+  const previousModeRef = useRef<ViewMode | null>(null);
+
+  useEffect(() => {
+    if (previousModeRef.current === null) {
+      previousModeRef.current = viewMode;
+      const startPos = viewMode === "isometric" ? isoCameraPosition : flatCameraPosition;
+      const startTarget = viewMode === "isometric" ? isoTarget : flatTarget;
+      camera.position.set(startPos[0], startPos[1], startPos[2]);
+      const controls = controlsRef.current as { target?: THREE.Vector3; update?: () => void } | null;
+      if (controls?.target) {
+        controls.target.set(startTarget[0], startTarget[1], startTarget[2]);
+        controls.update?.();
+      }
+      camera.lookAt(startTarget[0], startTarget[1], startTarget[2]);
+      return;
+    }
+    if (previousModeRef.current !== viewMode) {
+      previousModeRef.current = viewMode;
+      transitionStartRef.current = performance.now();
+    }
+  }, [camera, controlsRef, flatCameraPosition, flatTarget, isoCameraPosition, isoTarget, viewMode]);
+
+  const targetCameraPos = useMemo(
+    () => new THREE.Vector3(...(viewMode === "isometric" ? isoCameraPosition : flatCameraPosition)),
+    [viewMode, isoCameraPosition, flatCameraPosition],
+  );
+  const targetControlsTarget = useMemo(
+    () => new THREE.Vector3(...(viewMode === "isometric" ? isoTarget : flatTarget)),
+    [viewMode, isoTarget, flatTarget],
+  );
+
+  useFrame(() => {
+    if (transitionStartRef.current === 0) return;
+    const elapsed = performance.now() - transitionStartRef.current;
+    if (elapsed > TRANSITION_DURATION_MS) {
+      camera.position.copy(targetCameraPos);
+      const controls = controlsRef.current as { target?: THREE.Vector3; update?: () => void } | null;
+      if (controls?.target) {
+        controls.target.copy(targetControlsTarget);
+        controls.update?.();
+      }
+      transitionStartRef.current = 0;
+      return;
+    }
+    camera.position.lerp(targetCameraPos, TRANSITION_LERP_FACTOR);
+    const controls = controlsRef.current as { target?: THREE.Vector3; update?: () => void } | null;
+    if (controls?.target) {
+      controls.target.lerp(targetControlsTarget, TRANSITION_LERP_FACTOR);
+      controls.update?.();
+    }
+  });
+
+  return null;
 }
 
 function sliceKey(slice: SliceDescriptor): string {
@@ -442,8 +582,29 @@ function SliceGroup({
     }
   }
 
+  const groupRef = useRef<THREE.Group>(null);
+  const targetVec = useMemo(
+    () => new THREE.Vector3(...slice.origin),
+    [slice.origin],
+  );
+
+  useEffect(() => {
+    const group = groupRef.current;
+    if (!group) return;
+    if (!group.userData.initialized) {
+      group.position.copy(targetVec);
+      group.userData.initialized = true;
+    }
+  }, [targetVec]);
+
+  useFrame(() => {
+    const group = groupRef.current;
+    if (!group) return;
+    group.position.lerp(targetVec, TRANSITION_LERP_FACTOR);
+  });
+
   return (
-    <group position={slice.origin}>
+    <group ref={groupRef}>
       <mesh
         position={[0, -TILE_THICKNESS / 2 - 0.02, 0]}
         receiveShadow

@@ -29,8 +29,8 @@ type Slice = {
   label: string;
 };
 
-const IsoScene = dynamic(
-  () => import("@/components/iso-scene").then((mod) => mod.IsoScene),
+const BoardScene3D = dynamic(
+  () => import("@/components/iso-scene").then((mod) => mod.BoardScene3D),
   { ssr: false },
 );
 
@@ -572,9 +572,9 @@ export function NChessBoard() {
 
       <section className="game-layout" aria-label="nChess game">
         <div className="board-stack" data-view-mode={board.dimension >= 3 ? viewMode : "flat"}>
-          {board.dimension >= 3 && viewMode === "isometric" ? (
+          {board.dimension >= 3 ? (
             <div className="iso-canvas-shell" key={`iso-${isoCameraResetCounter}`}>
-              <IsoScene
+              <BoardScene3D
                 analysisMove={analysisMove}
                 board={board}
                 canHumanMove={canHumanMove}
@@ -582,6 +582,7 @@ export function NChessBoard() {
                 selectedMoves={selectedMoves}
                 selectedPosition={selectedPosition}
                 spacing={isoSpacing}
+                viewMode={viewMode}
                 onCellClick={handleCellClick}
               />
             </div>
