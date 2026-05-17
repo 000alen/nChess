@@ -128,6 +128,10 @@ button {
   padding: 12px;
 }
 
+.board-stack[data-view-mode="isometric"] {
+  padding: 0;
+}
+
 .top-bar-actions {
   display: flex;
   flex-wrap: wrap;
@@ -140,139 +144,25 @@ button {
   grid-template-columns: repeat(var(--slice-columns), minmax(118px, 1fr));
 }
 
-.iso-grid {
-  --iso-slice-size: 240px;
-  --iso-tilt: 52deg;
-  --iso-spacing-ratio: 0.58;
-  --iso-stack-offset: calc(var(--iso-slice-size) * var(--iso-spacing-ratio));
-  --iso-lift: calc(var(--iso-slice-size) * 0.45);
-  display: grid;
-  gap: 28px;
-  grid-template-columns: repeat(var(--iso-columns), minmax(0, 1fr));
-  justify-items: center;
-  padding: 18px 8px;
-}
-
-.iso-stack {
-  --iso-stack-count: 1;
-  position: relative;
-  width: calc(var(--iso-slice-size) * 1.45);
-  min-height: calc(
-    var(--iso-slice-size) * 0.85
-    + var(--iso-stack-offset) * max(var(--iso-stack-count) - 1, 0)
-    + var(--iso-lift)
-    + 36px
-  );
-  margin-top: 24px;
-}
-
-.iso-stack-label {
-  background: var(--surface-2);
+.iso-canvas-shell {
+  background:
+    radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.04), transparent 55%),
+    linear-gradient(180deg, #0d1117 0%, #161b22 100%);
   border: 1px solid var(--border);
-  color: var(--text);
-  display: inline-block;
-  font-size: 0.78rem;
-  font-weight: 800;
-  left: 50%;
-  letter-spacing: 0.02em;
-  padding: 4px 8px;
-  position: absolute;
-  text-transform: uppercase;
-  top: 0;
-  transform: translate(-50%, -100%);
-  white-space: nowrap;
-  z-index: 50;
-}
-
-.iso-stage {
-  bottom: 0;
-  height: calc(
-    var(--iso-slice-size) * 0.85
-    + var(--iso-stack-offset) * max(var(--iso-stack-count) - 1, 0)
-  );
-  left: 50%;
-  position: absolute;
-  transform: translateX(-50%);
+  height: clamp(420px, 70vh, 720px);
+  position: relative;
   width: 100%;
 }
 
-.iso-slice {
-  --iso-level: 0;
-  --iso-lift-current: 0px;
-  bottom: calc(var(--iso-stack-offset) * var(--iso-level) + var(--iso-lift-current));
-  height: var(--iso-slice-size);
-  left: 50%;
-  position: absolute;
-  transform: translateX(-50%);
-  transition: bottom 220ms ease, z-index 0s;
-  width: var(--iso-slice-size);
-  z-index: calc(10 + var(--iso-level));
+.iso-html-passthrough,
+.iso-html-passthrough * {
+  pointer-events: none !important;
 }
 
-.iso-slice-board {
-  height: 100%;
-  transform: rotateX(var(--iso-tilt)) rotateZ(-45deg);
-  transform-origin: center bottom;
-  transition: transform 220ms ease, filter 220ms ease;
-  width: 100%;
-}
-
-.iso-slice-board .slice {
-  border-color: color-mix(in srgb, var(--text) 18%, transparent);
-  border-width: 1px;
-  box-shadow: 0 18px 38px rgba(0, 0, 0, 0.45);
-  height: 100%;
-}
-
-.iso-slice-board .slice .slice-label {
-  display: none;
-}
-
-.iso-slice-board .cells {
-  aspect-ratio: auto;
-  height: 100%;
-}
-
-.iso-slice-tag {
-  background: color-mix(in srgb, var(--brand) 22%, var(--surface));
-  border: 1px solid color-mix(in srgb, var(--brand) 60%, transparent);
-  color: var(--text);
-  font-size: 0.68rem;
-  font-weight: 800;
-  left: 100%;
-  letter-spacing: 0.04em;
-  padding: 2px 6px;
-  pointer-events: none;
-  position: absolute;
-  text-transform: uppercase;
-  top: 12%;
-  transform: translateX(-12%);
-  white-space: nowrap;
-  z-index: 6;
-}
-
-.iso-slice[data-target="true"] .iso-slice-tag {
-  background: color-mix(in srgb, var(--brand) 55%, var(--surface));
-  border-color: var(--brand);
-}
-
-.iso-slice[data-active="true"] {
-  --iso-lift-current: var(--iso-lift);
-  z-index: calc(60 + var(--iso-level));
-}
-
-.iso-slice[data-active="true"] .iso-slice-board {
-  filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.55));
-  transform: rotateX(calc(var(--iso-tilt) - 12deg)) rotateZ(-45deg);
-}
-
-.iso-slice:hover {
-  --iso-lift-current: var(--iso-lift);
-  z-index: calc(80 + var(--iso-level));
-}
-
-.iso-slice:hover .iso-slice-board {
-  transform: rotateX(calc(var(--iso-tilt) - 8deg)) rotateZ(-45deg);
+.page-shell[data-theme="light"] .iso-canvas-shell {
+  background:
+    radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.6), transparent 55%),
+    linear-gradient(180deg, #e9ecef 0%, #cdd2d8 100%);
 }
 
 .slice {
@@ -752,8 +642,8 @@ button {
     grid-template-columns: repeat(var(--slice-columns), minmax(92px, 1fr));
   }
 
-  .iso-grid {
-    --iso-slice-size: 200px;
+  .iso-canvas-shell {
+    height: clamp(360px, 60vh, 540px);
   }
 }
 
@@ -783,9 +673,8 @@ button {
     min-width: 300px;
   }
 
-  .iso-grid {
-    --iso-slice-size: 180px;
-    grid-template-columns: 1fr;
+  .iso-canvas-shell {
+    height: clamp(320px, 55vh, 460px);
   }
 
   .cell {
