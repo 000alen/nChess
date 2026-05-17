@@ -80,8 +80,10 @@ type ApiFailurePayload = {
 };
 
 type Theme = "dark" | "light";
+type ViewMode = "flat" | "isometric";
 type PromotionKind = Exclude<PieceKind, "king" | "pawn">;
 const THEME_STORAGE_KEY = "nchess-theme";
+const VIEW_MODE_STORAGE_KEY = "nchess-view-mode";
 const BOARD_PRESETS: Array<{ label: string; config: BoardConfig }> = [
   { label: "2D Classic", config: { dimension: 2, size: [8, 8] } },
   { label: "3D Compact", config: { dimension: 3, size: [5, 5, 4] } },
@@ -97,6 +99,8 @@ export function NChessBoard() {
   const [currentPly, setCurrentPly] = useState(0);
   const [theme, setTheme] = useState<Theme>("dark");
   const [themeLoaded, setThemeLoaded] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>("flat");
+  const [viewModeLoaded, setViewModeLoaded] = useState(false);
   const [botEnabled, setBotEnabled] = useState(true);
   const [botColor, setBotColor] = useState<PieceColor>("black");
   const [botDepth, setBotDepth] = useState(2);
@@ -188,6 +192,21 @@ export function NChessBoard() {
     }
     setTheme(window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
     setThemeLoaded(true);
+  }, []);
+
+  useEffect(() => {
+    if (!viewModeLoaded) {
+      return;
+    }
+    window.localStorage.setItem(VIEW_MODE_STORAGE_KEY, viewMode);
+  }, [viewMode, viewModeLoaded]);
+
+  useEffect(() => {
+    const savedViewMode = window.localStorage.getItem(VIEW_MODE_STORAGE_KEY);
+    if (savedViewMode === "flat" || savedViewMode === "isometric") {
+      setViewMode(savedViewMode);
+    }
+    setViewModeLoaded(true);
   }, []);
 
   useEffect(() => {
@@ -500,35 +519,62 @@ export function NChessBoard() {
           <p className="brand-kicker">nChess</p>
           <strong>{board.dimension}D Chess Arena</strong>
         </div>
-        <button
-          className="theme-toggle"
-          type="button"
-          aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
-          onClick={() => setTheme((currentTheme) => (currentTheme === "dark" ? "light" : "dark"))}
-        >
-          {theme === "dark" ? "Light mode" : "Dark mode"}
-        </button>
+        <div className="top-bar-actions">
+          {board.dimension >= 3 ? (
+            <button
+              className="theme-toggle"
+              type="button"
+              aria-pressed={viewMode === "isometric"}
+              aria-label={`Switch to ${viewMode === "isometric" ? "flat" : "isometric"} view`}
+              onClick={() => setViewMode((current) => (current === "isometric" ? "flat" : "isometric"))}
+            >
+              {viewMode === "isometric" ? "Flat view" : "Isometric"}
+            </button>
+          ) : null}
+          <button
+            className="theme-toggle"
+            type="button"
+            aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+            onClick={() => setTheme((currentTheme) => (currentTheme === "dark" ? "light" : "dark"))}
+          >
+            {theme === "dark" ? "Light mode" : "Dark mode"}
+          </button>
+        </div>
       </header>
 
       <section className="game-layout" aria-label="nChess game">
-        <div className="board-stack">
-          <div className="slice-grid" style={{ "--slice-columns": sliceColumnCount(board) } as CSSProperties}>
-            {slicesForBoard(board).map((slice) => (
-              <BoardSlice
-                key={slice.coordinates.join(",") || "2d"}
-                board={board}
-                canHumanMove={canHumanMove}
-                hintMove={hintMove}
-                slice={slice}
-                selectedMoves={selectedMoves}
-                selectedPosition={selectedPosition}
-                onCellClick={handleCellClick}
-                onDropMove={(from, to) => {
-                  void requestHumanMove({ from, to });
-                }}
-              />
-            ))}
-          </div>
+        <div className="board-stack" data-view-mode={board.dimension >= 3 ? viewMode : "flat"}>
+          {board.dimension >= 3 && viewMode === "isometric" ? (
+            <IsometricStacks
+              board={board}
+              canHumanMove={canHumanMove}
+              hintMove={hintMove}
+              selectedMoves={selectedMoves}
+              selectedPosition={selectedPosition}
+              onCellClick={handleCellClick}
+              onDropMove={(from, to) => {
+                void requestHumanMove({ from, to });
+              }}
+            />
+          ) : (
+            <div className="slice-grid" style={{ "--slice-columns": sliceColumnCount(board) } as CSSProperties}>
+              {slicesForBoard(board).map((slice) => (
+                <BoardSlice
+                  key={slice.coordinates.join(",") || "2d"}
+                  board={board}
+                  canHumanMove={canHumanMove}
+                  hintMove={hintMove}
+                  slice={slice}
+                  selectedMoves={selectedMoves}
+                  selectedPosition={selectedPosition}
+                  onCellClick={handleCellClick}
+                  onDropMove={(from, to) => {
+                    void requestHumanMove({ from, to });
+                  }}
+                />
+              ))}
+            </div>
+          )}
         </div>
 
         <aside className="side-panel">
@@ -1010,6 +1056,137 @@ function BoardSlice({
         {hintArrow ? <HintArrow arrow={hintArrow} /> : null}
       </div>
     </article>
+  );
+}
+
+function IsometricStacks({
+  board,
+  canHumanMove,
+  hintMove,
+  selectedMoves,
+  selectedPosition,
+  onCellClick,
+  onDropMove,
+}: {
+  board: BoardState;
+  canHumanMove: boolean;
+  hintMove: Move | null;
+  selectedMoves: Move[];
+  selectedPosition: Position | null;
+  onCellClick: (position: Position) => void | Promise<void>;
+  onDropMove: (from: Position, to: Position) => void;
+}) {
+  const zCount = board.size[2];
+
+  if (board.dimension === 3) {
+    const slices = Array.from({ length: zCount }, (_, z) => ({
+      coordinates: [z] as Position,
+      label: `z=${z}`,
+    }));
+    return (
+      <div className="iso-grid" style={{ "--iso-columns": 1 } as CSSProperties}>
+        <IsometricStack
+          board={board}
+          canHumanMove={canHumanMove}
+          hintMove={hintMove}
+          label={`3D stack (${zCount} levels)`}
+          selectedMoves={selectedMoves}
+          selectedPosition={selectedPosition}
+          slices={slices}
+          onCellClick={onCellClick}
+          onDropMove={onDropMove}
+        />
+      </div>
+    );
+  }
+
+  const wCount = board.size[3];
+  return (
+    <div
+      className="iso-grid"
+      style={{ "--iso-columns": Math.min(wCount, 2) } as CSSProperties}
+    >
+      {Array.from({ length: wCount }, (_, w) => {
+        const slices = Array.from({ length: zCount }, (_, z) => ({
+          coordinates: [z, w] as Position,
+          label: `z=${z} w=${w}`,
+        }));
+        return (
+          <IsometricStack
+            key={`stack-w${w}`}
+            board={board}
+            canHumanMove={canHumanMove}
+            hintMove={hintMove}
+            label={`w=${w}`}
+            selectedMoves={selectedMoves}
+            selectedPosition={selectedPosition}
+            slices={slices}
+            onCellClick={onCellClick}
+            onDropMove={onDropMove}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+function IsometricStack({
+  board,
+  canHumanMove,
+  hintMove,
+  label,
+  selectedMoves,
+  selectedPosition,
+  slices,
+  onCellClick,
+  onDropMove,
+}: {
+  board: BoardState;
+  canHumanMove: boolean;
+  hintMove: Move | null;
+  label: string;
+  selectedMoves: Move[];
+  selectedPosition: Position | null;
+  slices: Slice[];
+  onCellClick: (position: Position) => void | Promise<void>;
+  onDropMove: (from: Position, to: Position) => void;
+}) {
+  const stackStyle = {
+    "--iso-stack-count": slices.length,
+  } as CSSProperties;
+
+  return (
+    <div className="iso-stack" style={stackStyle}>
+      <span className="iso-stack-label">{label}</span>
+      <div className="iso-stage">
+        {slices.map((slice, index) => {
+          const sliceStyle = {
+            "--iso-level": index,
+          } as CSSProperties;
+          return (
+            <div
+              className="iso-slice"
+              key={slice.coordinates.join(",") || "0"}
+              style={sliceStyle}
+            >
+              <span className="iso-slice-tag">{slice.label}</span>
+              <div className="iso-slice-board">
+                <BoardSlice
+                  board={board}
+                  canHumanMove={canHumanMove}
+                  hintMove={hintMove}
+                  slice={slice}
+                  selectedMoves={selectedMoves}
+                  selectedPosition={selectedPosition}
+                  onCellClick={onCellClick}
+                  onDropMove={onDropMove}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
