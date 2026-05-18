@@ -167,3 +167,71 @@ export function evaluateBoard(board: BoardState): number {
     return score + signedValue;
   }, 0);
 }
+
+export const MATE_SCORE = 1_000_000;
+export const MATE_THRESHOLD = MATE_SCORE - 1_000;
+
+export type EvaluationView = {
+  /** Human-readable label for the eval bar — `+1.5`, `-0.4`, `M2`, `-M2`, `1–0`, `0–1`. */
+  label: string;
+  /** True when a forced mate is on the board. */
+  isMate: boolean;
+  /** Signed mate distance from white's perspective: `+N` white mates, `-N` white gets mated, `0` already final. */
+  mateIn: number | null;
+  /** White's territory on a 0-100 vertical fill. Mate pegs to 0 or 100. */
+  fillPercent: number;
+};
+
+/**
+ * Pure score-to-label conversion. The label is *analytical*: an `M{N}` is only
+ * emitted when an engine search returned a mate-distance score (or the API
+ * passed a non-null `mateIn`). No heuristic fallback ever claims a mate.
+ *
+ * `whiteScore` is signed in white's favour: positive means white better.
+ */
+export function describeEvaluation(
+  whiteScore: number,
+  mateIn: number | null = null,
+): EvaluationView {
+  if (mateIn !== null) {
+    if (mateIn === 0) {
+      const winnerScore = whiteScore !== 0 ? whiteScore : 1;
+      return {
+        label: winnerScore > 0 ? "1–0" : "0–1",
+        isMate: true,
+        mateIn: 0,
+        fillPercent: winnerScore > 0 ? 100 : 0,
+      };
+    }
+    return {
+      label: mateIn > 0 ? `M${Math.abs(mateIn)}` : `-M${Math.abs(mateIn)}`,
+      isMate: true,
+      mateIn,
+      fillPercent: mateIn > 0 ? 100 : 0,
+    };
+  }
+
+  if (Math.abs(whiteScore) >= MATE_THRESHOLD) {
+    const plies = MATE_SCORE - Math.abs(whiteScore);
+    if (plies <= 0) {
+      return {
+        label: whiteScore > 0 ? "1–0" : "0–1",
+        isMate: true,
+        mateIn: 0,
+        fillPercent: whiteScore > 0 ? 100 : 0,
+      };
+    }
+    const movesToMate = Math.ceil(plies / 2);
+    const sign = whiteScore > 0 ? 1 : -1;
+    return {
+      label: sign > 0 ? `M${movesToMate}` : `-M${movesToMate}`,
+      isMate: true,
+      mateIn: sign * movesToMate,
+      fillPercent: sign > 0 ? 100 : 0,
+    };
+  }
+
+  const fill = Math.max(4, Math.min(96, 50 + whiteScore * 4));
+  const signed = `${whiteScore >= 0 ? "+" : ""}${whiteScore.toFixed(1)}`;
+  return { label: signed, isMate: false, mateIn: null, fillPercent: fill };
+}

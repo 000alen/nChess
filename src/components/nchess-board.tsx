@@ -7,7 +7,9 @@ import { useEffect, useMemo, useState } from "react";
 import {
   createInitialBoard,
   DEFAULT_BOARD_CONFIG,
+  describeEvaluation,
   evaluateBoard,
+  MATE_THRESHOLD,
   Move,
   nextTurn,
   normalizeBoardConfig,
@@ -52,6 +54,7 @@ type MoveRecord = {
 type EngineEvaluation = {
   loading: boolean;
   score: number | null;
+  mateIn: number | null;
   status: EngineStatus | null;
 };
 
@@ -67,6 +70,7 @@ type AnalysisPartial = {
   depth?: number;
   elapsedMs?: number;
   error?: ApiErrorPayload | string;
+  mateIn?: number | null;
   move?: Move | null;
   nodes?: number;
   ok?: boolean;
@@ -79,6 +83,7 @@ type StreamEvent = {
   type: "started" | "depth" | "final";
   depth?: number;
   score?: number;
+  mateIn?: number | null;
   nodes?: number;
   elapsedMs?: number;
   searchElapsedMs?: number;
@@ -148,6 +153,7 @@ export function NChessBoard() {
   const [engineEvaluation, setEngineEvaluation] = useState<EngineEvaluation>({
     loading: true,
     score: null,
+    mateIn: null,
     status: null,
   });
 
@@ -175,10 +181,16 @@ export function NChessBoard() {
           body: JSON.stringify({
             board,
             color: "white",
+            // Bounded mate-aware iterative deepening. The score we trust is
+            // the analytical one from the engine search; the heuristic eval
+            // only serves as the bar's continuous fill while the search runs.
+            searchDepth: 4,
+            searchTimeMs: 250,
           }),
           signal: controller.signal,
         });
         const payload = await response.json() as {
+          mateIn?: number | null;
           status?: EngineStatus;
           whiteScore?: number;
         };
@@ -187,7 +199,13 @@ export function NChessBoard() {
           throw new Error("Evaluation request failed");
         }
         const whiteScore = payload.whiteScore;
-        setEngineEvaluation({ loading: false, score: whiteScore, status: payload.status ?? null });
+        const mateIn = typeof payload.mateIn === "number" ? payload.mateIn : null;
+        setEngineEvaluation({
+          loading: false,
+          score: whiteScore,
+          mateIn,
+          status: payload.status ?? null,
+        });
         setMoveHistory((records) => records.map((record) => (
           sameBoard(record.board, board)
             ? { ...record, evaluation: whiteScore, evaluationSource: "engine" }
@@ -195,7 +213,7 @@ export function NChessBoard() {
         )));
       } catch (error) {
         if (!controller.signal.aborted) {
-          setEngineEvaluation({ loading: false, score: null, status: null });
+          setEngineEvaluation({ loading: false, score: null, mateIn: null, status: null });
         }
       }
     }
@@ -426,6 +444,29 @@ export function NChessBoard() {
     setAnalysisMove(null);
   }
 
+  function applyAnalysisMate(partial: AnalysisPartial | null | undefined) {
+    if (!partial) {
+      return;
+    }
+    let mateIn: number | null = null;
+    if (typeof partial.mateIn === "number") {
+      mateIn = partial.mateIn;
+    } else if (typeof partial.score === "number" && Math.abs(partial.score) >= MATE_THRESHOLD) {
+      // Server somehow didn't pre-compute; the score is enough on its own
+      // because describeEvaluation will recover the distance.
+      mateIn = null;
+    }
+    if (mateIn === null && typeof partial.score !== "number") {
+      return;
+    }
+    setEngineEvaluation((current) => {
+      if (mateIn === null && (typeof partial.score !== "number" || Math.abs(partial.score) < MATE_THRESHOLD)) {
+        return current;
+      }
+      return { ...current, mateIn: mateIn ?? current.mateIn };
+    });
+  }
+
   async function requestHint() {
     setHintThinking(true);
     setHintError(null);
@@ -438,9 +479,10 @@ export function NChessBoard() {
         onPartial: (partial) => {
           if (partial.move) {
             setHintMove(partial.move);
-          setAnalysisMove(partial.move);
+            setAnalysisMove(partial.move);
           }
           setAnalysisInfo(formatAnalysisInfo(partial));
+          applyAnalysisMate(partial);
         },
       });
 
@@ -450,6 +492,7 @@ export function NChessBoard() {
         return;
       }
       setHintMove(finalPartial.move);
+      applyAnalysisMate(finalPartial);
     } catch (error) {
       setHintError(error instanceof Error ? error.message : "Hint request failed");
     } finally {
@@ -538,6 +581,7 @@ export function NChessBoard() {
               cached: false,
               depth: event.depth,
               elapsedMs: event.elapsedMs,
+              mateIn: event.mateIn ?? null,
               move: event.move ?? null,
               nodes: event.nodes,
               ok: true,
@@ -603,6 +647,7 @@ export function NChessBoard() {
             setAnalysisMove(partial.move);
           }
           setAnalysisInfo(formatAnalysisInfo(partial));
+          applyAnalysisMate(partial);
         },
       });
 
@@ -610,6 +655,7 @@ export function NChessBoard() {
         setBotError(errorMessage(finalPartial?.error, "Bot has no legal move."));
         return;
       }
+      applyAnalysisMate(finalPartial);
 
       const botMove = finalPartial.move;
       if (finalPartial.board) {
@@ -671,6 +717,7 @@ export function NChessBoard() {
       <section className="game-layout" aria-label="nChess game">
         <VerticalEvaluationBar
           loading={engineEvaluation.loading}
+          mateIn={engineEvaluation.mateIn}
           positionHash={board.hash}
           score={evaluation}
           source={engineEvaluation.score === null ? "local" : "engine"}
@@ -1046,34 +1093,37 @@ function PromotionSettings({
 
 function VerticalEvaluationBar({
   loading,
+  mateIn,
   positionHash,
   score,
   source,
 }: {
   loading: boolean;
+  mateIn: number | null;
   positionHash?: string;
   score: number;
   source: "engine" | "local";
 }) {
-  const whitePercent = clamp(50 + score * 4, 4, 96);
-  const label = `${score >= 0 ? "+" : ""}${score.toFixed(1)}`;
+  const view = describeEvaluation(score, mateIn);
   const tooltipParts = [
-    `${source === "engine" ? "Engine" : "Local"} eval ${label}`,
+    `${source === "engine" ? "Engine" : "Local"} eval ${view.label}`,
+    view.isMate ? "forced mate" : null,
     positionHash ? `pos ${positionHash}` : null,
-  ].filter(Boolean);
+  ].filter(Boolean) as string[];
 
   return (
     <aside
       className="eval-rail"
-      aria-label={`Evaluation ${label}`}
+      aria-label={`Evaluation ${view.label}`}
+      data-mate={view.isMate || undefined}
       title={tooltipParts.join(" · ")}
     >
-      <span className="eval-rail-score" data-loading={loading || undefined}>
-        {label}
+      <span className="eval-rail-score" data-loading={loading || undefined} data-mate={view.isMate || undefined}>
+        {view.label}
       </span>
       <div className="eval-rail-track" aria-hidden="true">
-        <div className="eval-rail-fill" style={{ height: `${whitePercent}%` }} />
-        <div className="eval-rail-marker" style={{ bottom: `${whitePercent}%` }} />
+        <div className="eval-rail-fill" style={{ height: `${view.fillPercent}%` }} />
+        <div className="eval-rail-marker" style={{ bottom: `${view.fillPercent}%` }} />
       </div>
     </aside>
   );
@@ -1457,6 +1507,9 @@ function canonicalPieces(board: BoardState): string[] {
 }
 
 function formatScore(score: number): string {
+  if (Math.abs(score) >= MATE_THRESHOLD) {
+    return describeEvaluation(score).label;
+  }
   return `${score >= 0 ? "+" : ""}${score.toFixed(1)}`;
 }
 

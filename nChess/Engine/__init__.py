@@ -27,7 +27,40 @@ PIECE_VALUES = {
 }
 
 MATE_SCORE = 1_000_000
+# Any score whose absolute value is at least this is a forced-mate score
+# returned by negamax. The slack accommodates max search ply being well below
+# 1000.
+MATE_THRESHOLD = MATE_SCORE - 1_000
 DRAW_SCORE = 0
+
+
+def mate_distance(score: float) -> int | None:
+    """Convert a search score into plies-to-mate, or None if not a mate score.
+
+    The convention used by ``negamax`` is: at any node where the side to move
+    is checkmated we return ``-MATE_SCORE + ply``. After negation up the
+    principal variation, a mate at ply ``p`` shows up at the root as
+    ``±(MATE_SCORE - p)``. So ``MATE_SCORE - |score|`` recovers the ply
+    distance from the root to the mating position.
+    """
+    if abs(score) < MATE_THRESHOLD:
+        return None
+    return max(0, MATE_SCORE - int(round(abs(score))))
+
+
+def mate_in_moves(score: float) -> int | None:
+    """Convert a search score into mate-in-N (full moves), or None.
+
+    Both the player who delivers mate (``positive`` score, ``2N-1`` plies) and
+    the player who gets mated (``negative`` score, ``2N`` plies) round through
+    ``ceil(plies / 2)`` to land on the conventional ``N``.
+    """
+    plies = mate_distance(score)
+    if plies is None:
+        return None
+    if plies == 0:
+        return 0
+    return (plies + 1) // 2
 
 
 @dataclass(frozen=True)

@@ -2,11 +2,27 @@ from time import perf_counter
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler
 
-from api.chess_api import COLORS, build_board, cached_get, cached_set, handle_api_error, make_cache, new_request_id, position_hash, write_json_response
-from nChess.Engine import evaluate_position
+from api.chess_api import (
+    COLORS,
+    build_board,
+    cached_get,
+    cached_set,
+    handle_api_error,
+    make_cache,
+    new_request_id,
+    position_hash,
+    signed_mate_in_for_white,
+    write_json_response,
+)
+from nChess.Engine import evaluate_position, iterative_deepening
 from nChess.nBoard.Board import ClassicColor
 
 EVALUATE_CACHE = make_cache()
+DEFAULT_SEARCH_DEPTH = 4
+MAX_SEARCH_DEPTH = 6
+DEFAULT_SEARCH_TIME_MS = 250
+MIN_SEARCH_TIME_MS = 0
+MAX_SEARCH_TIME_MS = 3_000
 
 
 class handler(BaseHTTPRequestHandler):
@@ -46,22 +62,56 @@ def evaluate_request(request, request_id=None):
     if color_name not in COLORS:
         raise ValueError("color must be 'white' or 'black'")
 
+    search_depth = clamp_int(request.get("searchDepth", DEFAULT_SEARCH_DEPTH), 0, MAX_SEARCH_DEPTH)
+    search_time_ms = clamp_int(
+        request.get("searchTimeMs", DEFAULT_SEARCH_TIME_MS),
+        MIN_SEARCH_TIME_MS,
+        MAX_SEARCH_TIME_MS,
+    )
+
     board = build_board(board_payload)
     color = COLORS[color_name]
     board_hash = position_hash(board)
-    cache_key = (board_hash, color_name)
+    cache_key = (board_hash, color_name, search_depth, search_time_ms)
     cached = cached_get(EVALUATE_CACHE, cache_key)
     if cached is not None:
         return {**cached, "requestId": request_id, "cached": True, "elapsedMs": elapsed_ms(start)}
 
     score = evaluate_position(board, color)
+    white_static_score = score if color is ClassicColor.white else -score
+
+    mate_in = None
+    search_score = None
+    search_depth_reached = 0
+    search_nodes = 0
+    if search_depth > 0 and search_time_ms > 0:
+        # Bounded iterative deepening only fires when the request opted into a
+        # search budget. The score it returns is whatever depth was actually
+        # completed; we never extrapolate. If the result is a mate score, the
+        # ``MATE_SCORE - |score|`` convention recovers the *proved* mate
+        # distance.
+        result = iterative_deepening(
+            board,
+            max_depth=search_depth,
+            color=color,
+            evaluator=evaluate_position,
+            time_limit_ms=search_time_ms,
+        )
+        search_score = result.score
+        search_depth_reached = result.depth
+        search_nodes = result.nodes
+        mate_in = signed_mate_in_for_white(result.score, color_name)
 
     payload = {
         "requestId": request_id,
         "color": color_name,
         "positionHash": board_hash,
         "score": score,
-        "whiteScore": score if color is ClassicColor.white else -score,
+        "whiteScore": white_static_score,
+        "mateIn": mate_in,
+        "searchScore": search_score,
+        "searchDepthReached": search_depth_reached,
+        "searchNodes": search_nodes,
         "status": {
             "white": board_status(board, ClassicColor.white),
             "black": board_status(board, ClassicColor.black),
@@ -71,6 +121,14 @@ def evaluate_request(request, request_id=None):
     }
     cached_set(EVALUATE_CACHE, cache_key, {key: value for key, value in payload.items() if key not in {"requestId", "elapsedMs", "cached"}})
     return payload
+
+
+def clamp_int(value, low, high):
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        n = low
+    return max(low, min(n, high))
 
 
 def board_status(board, color):

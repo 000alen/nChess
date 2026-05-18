@@ -216,6 +216,17 @@ button {
   opacity: 0.55;
 }
 
+.eval-rail-score[data-mate] {
+  background: var(--brand);
+  color: #ffffff;
+  letter-spacing: 0.04em;
+}
+
+.eval-rail[data-mate] .eval-rail-marker {
+  background: var(--brand-strong);
+  height: 4px;
+}
+
 .eval-rail-track {
   background: #111111;
   border: 1px solid var(--border);

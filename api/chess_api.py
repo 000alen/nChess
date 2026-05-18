@@ -4,6 +4,7 @@ from collections import OrderedDict
 from http import HTTPStatus
 from uuid import uuid4
 
+from nChess.Engine import MATE_THRESHOLD, mate_in_moves
 from nChess.Piece import Move
 from nChess.Piece.Bishop import Bishop
 from nChess.Piece.King import King
@@ -156,6 +157,29 @@ def serialize_move(move):
 
 def serialize_position(position):
     return ",".join(str(value) for value in position)
+
+
+def signed_mate_in_for_white(score, color_name):
+    """White-perspective signed mate distance, in moves, or ``None``.
+
+    Returns ``+N`` if white is mating in N moves, ``-N`` if white is being
+    mated in N moves, ``0`` if the position is already final, and ``None``
+    if the score is not a forced-mate score.
+
+    ``score`` is interpreted as the value reported by the engine when
+    searching from ``color_name``'s perspective.
+    """
+    if abs(score) < MATE_THRESHOLD:
+        return None
+    moves = mate_in_moves(score)
+    if moves is None:
+        return None
+    sign = 1 if score >= 0 else -1
+    if color_name == "black":
+        sign = -sign
+    if moves == 0:
+        return 0
+    return sign * moves
 
 
 def volume(size):

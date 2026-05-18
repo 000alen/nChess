@@ -8,6 +8,8 @@ from api.move import move_request
 from nChess.Engine import (
     EXACT,
     LOWER,
+    MATE_SCORE,
+    MATE_THRESHOLD,
     SearchContext,
     TTEntry,
     UPPER,
@@ -18,9 +20,12 @@ from nChess.Engine import (
     find_best_move,
     iterative_deepening,
     legal_moves,
+    mate_distance,
+    mate_in_moves,
     negamax,
     position_key,
 )
+from api.chess_api import signed_mate_in_for_white
 from nChess.GUI.geometry import (
     board_coordinates_for_indices,
     board_grid_size,
@@ -210,7 +215,10 @@ class IntegrationSmokeTests(unittest.TestCase):
         depth_events = [event for event in lines if event["type"] == "depth"]
         self.assertGreaterEqual(len(depth_events), 1)
         self.assertEqual([event["depth"] for event in depth_events], sorted({event["depth"] for event in depth_events}))
+        for event in depth_events:
+            self.assertIn("mateIn", event)
         final = lines[-1]
+        self.assertIn("mateIn", final)
         self.assertEqual(final["move"], {"from": [0, 0], "to": [0, 5]})
         self.assertEqual(final["board"]["turn"], "black")
 
@@ -292,12 +300,60 @@ class IntegrationSmokeTests(unittest.TestCase):
                 ],
             },
             "color": "white",
+            "searchDepth": 0,
         }
 
         response = evaluate_request(payload)
 
         self.assertIn("whiteScore", response)
         self.assertIsInstance(response["whiteScore"], float)
+        self.assertIn("mateIn", response)
+        self.assertIsNone(response["mateIn"])
+
+    def test_evaluate_api_reports_mate_in_one(self):
+        payload = {
+            "board": {
+                "dimension": 2,
+                "size": [8, 8],
+                "turn": "white",
+                "pieces": [
+                    {"kind": "king", "color": "white", "position": [4, 0], "hasMoved": False},
+                    {"kind": "rook", "color": "white", "position": [0, 6], "hasMoved": False},
+                    {"kind": "rook", "color": "white", "position": [1, 7], "hasMoved": False},
+                    {"kind": "king", "color": "black", "position": [4, 7], "hasMoved": False},
+                ],
+            },
+            "color": "white",
+            "searchDepth": 2,
+            "searchTimeMs": 1500,
+        }
+
+        response = evaluate_request(payload)
+
+        self.assertEqual(response["mateIn"], 1)
+        self.assertGreater(response["searchScore"], MATE_THRESHOLD)
+
+    def test_bot_api_returns_mate_in_field(self):
+        payload = {
+            "board": {
+                "dimension": 2,
+                "size": [8, 8],
+                "turn": "white",
+                "pieces": [
+                    {"kind": "king", "color": "white", "position": [4, 0], "hasMoved": False},
+                    {"kind": "rook", "color": "white", "position": [0, 6], "hasMoved": False},
+                    {"kind": "rook", "color": "white", "position": [1, 7], "hasMoved": False},
+                    {"kind": "king", "color": "black", "position": [4, 7], "hasMoved": False},
+                ],
+            },
+            "color": "white",
+            "depth": 1,
+        }
+
+        response = choose_bot_move(payload)
+
+        self.assertIn("mateIn", response)
+        self.assertEqual(response["mateIn"], 1)
 
 
 class EngineSearchTests(unittest.TestCase):
@@ -396,6 +452,50 @@ class EngineSearchTests(unittest.TestCase):
         self.assertIsInstance(entry, TTEntry)
         self.assertIn(entry.bound, {EXACT, LOWER, UPPER})
         self.assertIsNotNone(entry.best_move)
+
+
+class MateScoreTests(unittest.TestCase):
+    def test_mate_distance_returns_none_for_normal_scores(self):
+        self.assertIsNone(mate_distance(0))
+        self.assertIsNone(mate_distance(12.5))
+        self.assertIsNone(mate_distance(-9.0))
+
+    def test_mate_distance_recovers_plies_to_mate(self):
+        # MATE_SCORE - p == score, so mate_distance(score) should round-trip p.
+        self.assertEqual(mate_distance(MATE_SCORE - 1), 1)
+        self.assertEqual(mate_distance(MATE_SCORE - 3), 3)
+        self.assertEqual(mate_distance(-(MATE_SCORE - 4)), 4)
+
+    def test_mate_in_moves_uses_ceil_of_plies_over_two(self):
+        # The mating side moves N times for an N-move mate (2N-1 plies); the
+        # mated side endures (2N-1) plies as well. ``ceil(plies/2)`` is N
+        # in either case.
+        self.assertEqual(mate_in_moves(MATE_SCORE - 1), 1)
+        self.assertEqual(mate_in_moves(MATE_SCORE - 2), 1)
+        self.assertEqual(mate_in_moves(MATE_SCORE - 3), 2)
+        self.assertEqual(mate_in_moves(MATE_SCORE - 4), 2)
+        self.assertEqual(mate_in_moves(MATE_SCORE - 5), 3)
+
+    def test_signed_mate_in_for_white_flips_with_search_color(self):
+        # White-to-move, mate-in-1 from white's POV.
+        self.assertEqual(signed_mate_in_for_white(MATE_SCORE - 1, "white"), 1)
+        # Black-to-move, mate-in-1 from black's POV — i.e. -1 from white's.
+        self.assertEqual(signed_mate_in_for_white(MATE_SCORE - 1, "black"), -1)
+        # White-to-move, getting mated in 2 — i.e. -2 from white's.
+        self.assertEqual(signed_mate_in_for_white(-(MATE_SCORE - 4), "white"), -2)
+        self.assertIsNone(signed_mate_in_for_white(0.5, "white"))
+
+    def test_engine_returns_mate_score_for_provable_mate_in_one(self):
+        board = nBoard(2, (8, 8), turn_order=(ClassicColor.white, ClassicColor.black))
+        board.add(King, (4, 0), ClassicColor.white)
+        board.add(Rook, (0, 6), ClassicColor.white)
+        board.add(Rook, (1, 7), ClassicColor.white)
+        board.add(King, (4, 7), ClassicColor.black)
+
+        result = find_best_move(board, depth=1, color=ClassicColor.white)
+
+        self.assertGreater(result.score, MATE_THRESHOLD)
+        self.assertEqual(mate_in_moves(result.score), 1)
 
 
 class CheckmateAndStalemateTests(unittest.TestCase):

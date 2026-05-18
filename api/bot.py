@@ -3,7 +3,20 @@ from time import perf_counter
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler
 
-from api.chess_api import COLORS, build_board, cached_get, cached_set, handle_api_error, make_cache, new_request_id, position_hash, serialize_board, serialize_move, write_json_response
+from api.chess_api import (
+    COLORS,
+    build_board,
+    cached_get,
+    cached_set,
+    handle_api_error,
+    make_cache,
+    new_request_id,
+    position_hash,
+    serialize_board,
+    serialize_move,
+    signed_mate_in_for_white,
+    write_json_response,
+)
 from nChess.Engine import evaluate_position, iterative_deepening
 
 BOT_CACHE = make_cache()
@@ -83,6 +96,7 @@ def choose_bot_move(request, request_id=None):
         "board": serialize_board(board),
         "positionHash": board_hash,
         "score": result.score,
+        "mateIn": signed_mate_in_for_white(result.score, color_name),
         "depth": result.depth,
         "nodes": result.nodes,
         "cached": False,
@@ -133,6 +147,7 @@ def stream_bot_move(handler_self, request, request_id):
             "requestId": request_id,
             "depth": result.depth,
             "score": result.score,
+            "mateIn": signed_mate_in_for_white(result.score, color_name),
             "nodes": result.nodes,
             "elapsedMs": result.elapsed_ms,
             "move": serialize_move(result.move),
@@ -156,6 +171,7 @@ def stream_bot_move(handler_self, request, request_id):
         "requestId": request_id,
         "depth": final.depth,
         "score": final.score,
+        "mateIn": signed_mate_in_for_white(final.score, color_name),
         "nodes": final.nodes,
         "searchElapsedMs": final.elapsed_ms,
         "elapsedMs": elapsed_ms(start),
