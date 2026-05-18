@@ -30,6 +30,19 @@ from nChess.Engine import (
 )
 
 
+def collect_stream(board, max_depth, color, time_limit_ms=10_000):
+    snapshots = []
+    iterative_deepening(
+        board,
+        max_depth=max_depth,
+        color=color,
+        evaluator=evaluate_position,
+        time_limit_ms=time_limit_ms,
+        on_depth_complete=lambda result: snapshots.append((result.depth, result.score, result.nodes)),
+    )
+    return snapshots
+
+
 def section(title):
     print()
     print("=" * 72)
@@ -143,6 +156,38 @@ def tactical_suite():
             )
 
 
+def iterative_deepening_perf():
+    section("4a. Iterative deepening (this is what the bot endpoint actually runs)")
+    boards = [
+        ("classic 2D 8x8 (start)", Board()),
+    ]
+
+    b3d = nBoard(3, (5, 5, 4), turn_order=(ClassicColor.white, ClassicColor.black))
+    b3d.add(King, (4, 4, 3), ClassicColor.white)
+    b3d.add(King, (0, 0, 0), ClassicColor.black)
+    b3d.add(Pawn, (1, 1, 0), ClassicColor.white)
+    b3d.add(Pawn, (1, 2, 1), ClassicColor.black)
+    b3d.add(Queen, (3, 3, 1), ClassicColor.white)
+    boards.append(("3D 5x5x4 sparse", b3d))
+
+    b4d = nBoard(4, (4, 4, 4, 4), turn_order=(ClassicColor.white, ClassicColor.black))
+    b4d.add(King, (3, 3, 3, 3), ClassicColor.white)
+    b4d.add(King, (0, 0, 0, 0), ClassicColor.black)
+    b4d.add(Queen, (1, 1, 1, 1), ClassicColor.white)
+    b4d.add(Bishop, (2, 2, 2, 2), ClassicColor.black)
+    b4d.add(Knight, (0, 2, 0, 2), ClassicColor.white)
+    b4d.add(Rook, (3, 0, 0, 0), ClassicColor.black)
+    boards.append(("4D 4^4 sparse", b4d))
+
+    for name, board in boards:
+        for cap in (3, 5):
+            t0 = perf_counter()
+            snapshots = collect_stream(board, cap, ClassicColor.white, time_limit_ms=10_000)
+            elapsed = (perf_counter() - t0) * 1000
+            depths_reached = ",".join(f"d{d}({n}n)" for d, _s, n in snapshots)
+            print(f"  {name:25s} cap={cap}  t={elapsed:8.1f}ms  reached: {depths_reached}")
+
+
 def dimension_perf():
     section("4. Multi-dimensional search cost")
     boards = []
@@ -185,6 +230,7 @@ def main():
     if not args.skip_profile:
         profile_search()
     tactical_suite()
+    iterative_deepening_perf()
     dimension_perf()
 
 

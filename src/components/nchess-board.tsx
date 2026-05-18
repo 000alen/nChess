@@ -75,6 +75,22 @@ type AnalysisPartial = {
   searchElapsedMs?: number;
 };
 
+type StreamEvent = {
+  type: "started" | "depth" | "final";
+  depth?: number;
+  score?: number;
+  nodes?: number;
+  elapsedMs?: number;
+  searchElapsedMs?: number;
+  move?: Move | null;
+  board?: BoardState;
+  positionHash?: string;
+  requestId?: string;
+  maxDepth?: number;
+  timeLimitMs?: number;
+  color?: string;
+};
+
 type ApiErrorPayload = {
   code?: string;
   message?: string;
@@ -454,35 +470,117 @@ export function NChessBoard() {
     onPartial: (partial: AnalysisPartial) => void;
     timeLimitMs: number;
   }): Promise<AnalysisPartial | null> {
-    let latestPartial: AnalysisPartial | null = null;
-
-    for (let depth = 1; depth <= maxDepth; depth += 1) {
-      const response = await fetch("/api/bot", {
+    let response: Response;
+    try {
+      response = await fetch("/api/bot", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          Accept: "application/x-ndjson, application/json",
         },
         body: JSON.stringify({
           board: boardToAnalyze,
           color,
-          depth,
+          depth: maxDepth,
           timeLimitMs,
+          stream: true,
         }),
       });
-      const payload = await readJsonResponse<AnalysisPartial>(response, "Analysis request failed");
-      const partial = {
-        ...payload,
-        ok: response.ok,
-        requestedDepth: depth,
-      };
-      latestPartial = partial;
-      onPartial(partial);
-
-      if (!response.ok || !partial.move) {
-        break;
-      }
+    } catch {
+      return fallbackPerDepthAnalysis({ boardToAnalyze, color, maxDepth, onPartial, timeLimitMs });
     }
 
+    const contentType = response.headers.get("content-type") ?? "";
+    const isStream = contentType.includes("ndjson") || contentType.includes("event-stream");
+
+    if (!response.ok || !response.body || !isStream) {
+      // Server returned a single JSON response (older non-streaming branch),
+      // either because stream=true wasn't honoured or the request errored
+      // before streaming started; surface it as one partial.
+      let payload: AnalysisPartial;
+      try {
+        payload = await readJsonResponse<AnalysisPartial>(response, "Analysis request failed");
+      } catch (error) {
+        return {
+          error: error instanceof Error ? error.message : "Analysis request failed",
+          ok: response.ok,
+          requestedDepth: maxDepth,
+        };
+      }
+      const partial = { ...payload, ok: response.ok, requestedDepth: maxDepth };
+      onPartial(partial);
+      return partial;
+    }
+
+    let latestPartial: AnalysisPartial | null = null;
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (value) {
+        buffer += decoder.decode(value, { stream: true });
+        let newlineIndex = buffer.indexOf("\n");
+        while (newlineIndex >= 0) {
+          const line = buffer.slice(0, newlineIndex).trim();
+          buffer = buffer.slice(newlineIndex + 1);
+          newlineIndex = buffer.indexOf("\n");
+          if (!line) continue;
+          let event: StreamEvent;
+          try {
+            event = JSON.parse(line) as StreamEvent;
+          } catch {
+            continue;
+          }
+          if (event.type === "depth" || event.type === "final") {
+            const partial: AnalysisPartial = {
+              board: event.board,
+              cached: false,
+              depth: event.depth,
+              elapsedMs: event.elapsedMs,
+              move: event.move ?? null,
+              nodes: event.nodes,
+              ok: true,
+              requestedDepth: maxDepth,
+              score: event.score,
+              searchElapsedMs: event.searchElapsedMs,
+            };
+            latestPartial = partial;
+            onPartial(partial);
+          }
+        }
+      }
+      if (done) break;
+    }
+    return latestPartial;
+  }
+
+  async function fallbackPerDepthAnalysis({
+    boardToAnalyze,
+    color,
+    maxDepth,
+    onPartial,
+    timeLimitMs,
+  }: {
+    boardToAnalyze: BoardState;
+    color: PieceColor;
+    maxDepth: number;
+    onPartial: (partial: AnalysisPartial) => void;
+    timeLimitMs: number;
+  }): Promise<AnalysisPartial | null> {
+    let latestPartial: AnalysisPartial | null = null;
+    for (let depth = 1; depth <= maxDepth; depth += 1) {
+      const response = await fetch("/api/bot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ board: boardToAnalyze, color, depth, timeLimitMs }),
+      });
+      const payload = await readJsonResponse<AnalysisPartial>(response, "Analysis request failed");
+      const partial = { ...payload, ok: response.ok, requestedDepth: depth };
+      latestPartial = partial;
+      onPartial(partial);
+      if (!response.ok || !partial.move) break;
+    }
     return latestPartial;
   }
 
@@ -896,9 +994,9 @@ function BotSettings({
           <input
             type="number"
             min={1}
-            max={3}
+            max={6}
             value={depth}
-            onChange={(event) => onDepthChange(clamp(Number(event.target.value), 1, 3))}
+            onChange={(event) => onDepthChange(clamp(Number(event.target.value), 1, 6))}
           />
         </label>
         <label className="field">
@@ -906,10 +1004,10 @@ function BotSettings({
           <input
             type="number"
             min={100}
-            max={3000}
+            max={10000}
             step={100}
             value={timeLimitMs}
-            onChange={(event) => onTimeLimitChange(clamp(Number(event.target.value), 100, 3000))}
+            onChange={(event) => onTimeLimitChange(clamp(Number(event.target.value), 100, 10000))}
           />
         </label>
       </div>

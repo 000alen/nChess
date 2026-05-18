@@ -2,10 +2,25 @@ import unittest
 import importlib.util
 from pathlib import Path
 
-from api.bot import choose_bot_move
+from api.bot import choose_bot_move, stream_bot_move
 from api.evaluate import evaluate_request
 from api.move import move_request
-from nChess.Engine import best_move, classic_evaluate, doubled_pawns, evaluate_position, find_best_move, legal_moves
+from nChess.Engine import (
+    EXACT,
+    LOWER,
+    SearchContext,
+    TTEntry,
+    UPPER,
+    best_move,
+    classic_evaluate,
+    doubled_pawns,
+    evaluate_position,
+    find_best_move,
+    iterative_deepening,
+    legal_moves,
+    negamax,
+    position_key,
+)
 from nChess.GUI.geometry import (
     board_coordinates_for_indices,
     board_grid_size,
@@ -143,6 +158,62 @@ class IntegrationSmokeTests(unittest.TestCase):
 
         self.assertTrue(Path(to_PNG(board.get((3, 0)))).is_file())
 
+    def test_stream_bot_emits_started_depths_and_final(self):
+        import io
+        import json as json_module
+
+        class FakeHandler:
+            def __init__(self):
+                self.wfile = io.BytesIO()
+                self.headers = {}
+                self.status = None
+
+            def send_response(self, status):
+                self.status = status
+
+            def send_header(self, key, value):
+                self.headers[key] = value
+
+            def end_headers(self):
+                pass
+
+        payload = {
+            "board": {
+                "dimension": 2,
+                "size": [8, 8],
+                "turn": "white",
+                "pieces": [
+                    {"kind": "king", "color": "white", "position": [7, 7], "hasMoved": False},
+                    {"kind": "king", "color": "black", "position": [7, 0], "hasMoved": False},
+                    {"kind": "rook", "color": "white", "position": [0, 0], "hasMoved": False},
+                    {"kind": "queen", "color": "black", "position": [0, 5], "hasMoved": False},
+                ],
+            },
+            "color": "white",
+            "depth": 2,
+            "timeLimitMs": 1500,
+        }
+        handler_obj = FakeHandler()
+
+        stream_bot_move(handler_obj, payload, request_id="req-1")
+
+        self.assertEqual(handler_obj.status, 200)
+        self.assertEqual(handler_obj.headers["Content-Type"], "application/x-ndjson; charset=utf-8")
+        lines = [
+            json_module.loads(line)
+            for line in handler_obj.wfile.getvalue().decode().splitlines()
+            if line
+        ]
+        types = [event["type"] for event in lines]
+        self.assertEqual(types[0], "started")
+        self.assertEqual(types[-1], "final")
+        depth_events = [event for event in lines if event["type"] == "depth"]
+        self.assertGreaterEqual(len(depth_events), 1)
+        self.assertEqual([event["depth"] for event in depth_events], sorted({event["depth"] for event in depth_events}))
+        final = lines[-1]
+        self.assertEqual(final["move"], {"from": [0, 0], "to": [0, 5]})
+        self.assertEqual(final["board"]["turn"], "black")
+
     def test_bot_api_returns_engine_move(self):
         payload = {
             "board": {
@@ -272,6 +343,59 @@ class EngineSearchTests(unittest.TestCase):
         result = find_best_move(board, depth=1, color=ClassicColor.white)
         new_board = board.assume_move(result.move)
         self.assertTrue(new_board.in_checkmate(ClassicColor.black))
+
+    def test_iterative_deepening_streams_each_depth(self):
+        board = self.tactical_board()
+        snapshots = []
+        iterative_deepening(
+            board,
+            max_depth=3,
+            color=ClassicColor.white,
+            evaluator=evaluate_position,
+            time_limit_ms=10_000,
+            on_depth_complete=lambda result: snapshots.append(result.depth),
+        )
+
+        self.assertEqual(snapshots, [1, 2, 3])
+
+    def test_transposition_table_short_circuits_repeat_searches(self):
+        board = self.tactical_board()
+        context = SearchContext(0.0, deadline_ms=None)
+
+        first_score, first_nodes = negamax(
+            board,
+            depth=2,
+            color=ClassicColor.white,
+            evaluator=evaluate_position,
+            context=context,
+        )
+        second_score, second_nodes = negamax(
+            board,
+            depth=2,
+            color=ClassicColor.white,
+            evaluator=evaluate_position,
+            context=context,
+        )
+
+        self.assertEqual(first_score, second_score)
+        self.assertEqual(second_nodes, 1)
+
+    def test_transposition_entries_have_bound_metadata(self):
+        board = self.tactical_board()
+        context = SearchContext(0.0, deadline_ms=None)
+
+        negamax(
+            board,
+            depth=2,
+            color=ClassicColor.white,
+            evaluator=evaluate_position,
+            context=context,
+        )
+
+        entry = context.transpositions[(position_key(board), ClassicColor.white)]
+        self.assertIsInstance(entry, TTEntry)
+        self.assertIn(entry.bound, {EXACT, LOWER, UPPER})
+        self.assertIsNotNone(entry.best_move)
 
 
 class CheckmateAndStalemateTests(unittest.TestCase):

@@ -39,15 +39,44 @@ class SearchResult:
     elapsed_ms: float = 0
 
 
+EXACT = "exact"
+LOWER = "lower"
+UPPER = "upper"
+
+
+@dataclass(frozen=True)
+class TTEntry:
+    score: float
+    depth: int
+    bound: str  # EXACT | LOWER | UPPER
+    best_move: Move | None = None
+
+
 @dataclass
 class SearchContext:
     started_at: float
     deadline_ms: int | None = None
-    transpositions: dict[tuple[tuple, Color, int], tuple[float, Move | None]] = None
+    transpositions: dict = None
+    killers: dict = None
 
     def __post_init__(self):
         if self.transpositions is None:
             self.transpositions = {}
+        if self.killers is None:
+            self.killers = {}
+
+    def killer_moves(self, ply: int) -> tuple[Move, ...]:
+        return self.killers.get(ply, ())
+
+    def remember_killer(self, ply: int, move: Move) -> None:
+        existing = self.killers.get(ply)
+        if existing is None:
+            self.killers[ply] = (move,)
+            return
+        if move in existing:
+            return
+        # Two killer slots, most recent first.
+        self.killers[ply] = (move, existing[0]) if existing else (move,)
 
 
 class SearchTimeout(Exception):
@@ -286,6 +315,35 @@ def next_search_color(board: nBoard, previous_color: Color) -> Color:
     return opponent_color(board, previous_color)
 
 
+QUIESCENCE_DEPTH_BY_DIMENSION = {2: 4, 3: 1, 4: 0}
+
+
+def order_search_moves(
+    moves: tuple[Move, ...],
+    tt_move: Move | None,
+    killers: tuple[Move, ...],
+) -> tuple[Move, ...]:
+    if tt_move is None and not killers:
+        return moves
+
+    head: list[Move] = []
+    seen: set[Move] = set()
+    if tt_move is not None and tt_move in moves:
+        head.append(tt_move)
+        seen.add(tt_move)
+    for killer in killers:
+        if killer in seen:
+            continue
+        if killer in moves:
+            head.append(killer)
+            seen.add(killer)
+
+    if not head:
+        return moves
+    rest = tuple(move for move in moves if move not in seen)
+    return tuple(head) + rest
+
+
 def negamax(
     board: nBoard,
     depth: int,
@@ -301,22 +359,35 @@ def negamax(
         return -MATE_SCORE + ply, 1
     if board.in_stalemate(color):
         return DRAW_SCORE, 1
-    if depth == 0:
-        if board.dimension > 2:
-            return evaluator(board, color), 1
-        return quiescence(board, color, evaluator, alpha, beta, 2, context)
 
-    cache_key = (position_key(board), color, depth)
-    if context is not None and cache_key in context.transpositions:
-        cached_score, _cached_move = context.transpositions[cache_key]
-        return cached_score, 1
+    cache_key = (position_key(board), color)
+    tt_entry: TTEntry | None = None
+    if context is not None:
+        tt_entry = context.transpositions.get(cache_key)
+        if tt_entry is not None and tt_entry.depth >= depth:
+            if tt_entry.bound == EXACT:
+                return tt_entry.score, 1
+            if tt_entry.bound == LOWER and tt_entry.score >= beta:
+                return tt_entry.score, 1
+            if tt_entry.bound == UPPER and tt_entry.score <= alpha:
+                return tt_entry.score, 1
+
+    if depth <= 0:
+        q_depth = QUIESCENCE_DEPTH_BY_DIMENSION.get(board.dimension, 1)
+        return quiescence(board, color, evaluator, alpha, beta, q_depth, context)
 
     moves = ordered_legal_moves(board, color)
     if len(moves) == 0:
         return DRAW_SCORE, 1
 
+    tt_move = tt_entry.best_move if tt_entry is not None else None
+    killers = context.killer_moves(ply) if context is not None else ()
+    moves = order_search_moves(moves, tt_move, killers)
+
+    alpha_orig = alpha
     nodes = 1
     best_score = -inf
+    best_move: Move | None = None
     for move in moves:
         child = assume_engine_move(board, move)
         child_color = next_search_color(child, color)
@@ -335,12 +406,24 @@ def negamax(
 
         if score > best_score:
             best_score = score
-        alpha = max(alpha, score)
+            best_move = move
+        if score > alpha:
+            alpha = score
         if alpha >= beta:
+            if context is not None and not board.contains(move.final_position):
+                context.remember_killer(ply, move)
             break
 
     if context is not None:
-        context.transpositions[cache_key] = (best_score, None)
+        if best_score <= alpha_orig:
+            bound = UPPER
+        elif best_score >= beta:
+            bound = LOWER
+        else:
+            bound = EXACT
+        existing = context.transpositions.get(cache_key)
+        if existing is None or existing.depth <= depth:
+            context.transpositions[cache_key] = TTEntry(best_score, depth, bound, best_move)
     return best_score, nodes
 
 
@@ -393,9 +476,24 @@ def find_best_move(
         score = -MATE_SCORE if board.in_checkmate(color) else DRAW_SCORE
         return SearchResult(None, score, depth, 1)
 
-    if preferred_move is not None and preferred_move in moves:
-        moves = (preferred_move,) + tuple(move for move in moves if move != preferred_move)
+    tt_move: Move | None = None
+    if context is not None:
+        entry = context.transpositions.get((position_key(board), color))
+        if entry is not None:
+            tt_move = entry.best_move
 
+    head: list[Move] = []
+    seen: set[Move] = set()
+    if preferred_move is not None and preferred_move in moves:
+        head.append(preferred_move)
+        seen.add(preferred_move)
+    if tt_move is not None and tt_move in moves and tt_move not in seen:
+        head.append(tt_move)
+        seen.add(tt_move)
+    if head:
+        moves = tuple(head) + tuple(move for move in moves if move not in seen)
+
+    alpha_orig = -inf
     nodes = 1
     best_move = None
     best_score = -inf
@@ -429,6 +527,16 @@ def find_best_move(
             best_move = move
         alpha = max(alpha, score)
 
+    if context is not None and best_move is not None:
+        cache_key = (position_key(board), color)
+        if best_score <= alpha_orig:
+            bound = UPPER
+        else:
+            bound = EXACT
+        existing = context.transpositions.get(cache_key)
+        if existing is None or existing.depth <= depth:
+            context.transpositions[cache_key] = TTEntry(best_score, depth, bound, best_move)
+
     return SearchResult(best_move, best_score, depth, nodes)
 
 
@@ -438,6 +546,7 @@ def iterative_deepening(
     color: Color = None,
     evaluator: Evaluator = evaluate_position,
     time_limit_ms: int = 750,
+    on_depth_complete: Callable[[SearchResult], None] | None = None,
 ) -> SearchResult:
     start = perf_counter()
     context = SearchContext(start, time_limit_ms)
@@ -461,13 +570,16 @@ def iterative_deepening(
             if best_result is None:
                 fallback_color = current_or_requested_color(board, color)
                 moves = ordered_legal_moves(board, fallback_color)
-                return SearchResult(
+                fallback = SearchResult(
                     moves[0] if len(moves) else None,
                     evaluator(board, fallback_color) if len(moves) else DRAW_SCORE,
                     0,
                     1,
                     elapsed_ms(start),
                 )
+                if on_depth_complete is not None:
+                    on_depth_complete(fallback)
+                return fallback
             break
         best_result = SearchResult(
             result.move,
@@ -476,9 +588,14 @@ def iterative_deepening(
             result.nodes if best_result is None else best_result.nodes + result.nodes,
             elapsed_ms(start),
         )
+        if on_depth_complete is not None:
+            on_depth_complete(best_result)
 
     if best_result is None:
-        return SearchResult(None, DRAW_SCORE, 0, 0, elapsed_ms(start))
+        empty = SearchResult(None, DRAW_SCORE, 0, 0, elapsed_ms(start))
+        if on_depth_complete is not None:
+            on_depth_complete(empty)
+        return empty
     return best_result
 
 
