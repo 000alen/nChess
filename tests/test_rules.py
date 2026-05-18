@@ -13,12 +13,16 @@ from nChess.Engine import (
     SearchContext,
     TTEntry,
     UPPER,
+    activity_metrics,
     best_move,
+    centrality,
     classic_evaluate,
     doubled_pawns,
+    endgame_factor,
     evaluate_position,
     find_best_move,
     iterative_deepening,
+    king_safety,
     legal_moves,
     mate_distance,
     mate_in_moves,
@@ -37,6 +41,7 @@ from nChess.GUI.geometry import (
 from nChess.nBoard import nBoard
 from nChess.nBoard.Board import Board, ClassicColor
 from nChess.Piece import Move, PieceData
+from nChess.Piece.Bishop import Bishop
 from nChess.Piece.King import King
 from nChess.Piece.Knight import Knight
 from nChess.Piece.Pawn import Pawn
@@ -389,6 +394,41 @@ class EngineSearchTests(unittest.TestCase):
 
         self.assertEqual(best_move(board, depth=1, color=ClassicColor.white), Move((0, 0), (0, 5)))
 
+    def test_engine_does_not_walk_king_out_in_middlegame(self):
+        # A quiet middlegame-ish position where the king has a legal move to
+        # the next rank. Before the king-safety eval fix, the engine
+        # preferred King (3,0)->(3,1) at depth 3 because centrality and
+        # activity_metrics each rewarded the king for becoming "central"
+        # and "mobile". The fix removes the king from centrality, removes
+        # king moves from activity, and adds a king-displacement penalty
+        # scaled by remaining material.
+        board = nBoard(2, (8, 8), turn_order=(ClassicColor.white, ClassicColor.black))
+        board.add(King, (3, 0), ClassicColor.white)
+        board.add(Rook, (0, 0), ClassicColor.white)
+        board.add(Rook, (7, 0), ClassicColor.white)
+        board.add(Bishop, (5, 1), ClassicColor.white)
+        board.add(Knight, (6, 0), ClassicColor.white)
+        for f in (0, 1, 2, 4, 6, 7):
+            board.add(Pawn, (f, 1), ClassicColor.white)
+        board.add(Pawn, (3, 3), ClassicColor.white)
+        board.add(King, (3, 7), ClassicColor.black)
+        board.add(Rook, (0, 7), ClassicColor.black)
+        board.add(Rook, (7, 7), ClassicColor.black)
+        board.add(Bishop, (5, 6), ClassicColor.black)
+        board.add(Knight, (6, 7), ClassicColor.black)
+        for f in (0, 1, 2, 4, 6, 7):
+            board.add(Pawn, (f, 6), ClassicColor.black)
+        board.add(Pawn, (3, 4), ClassicColor.black)
+
+        for depth in (1, 2, 3):
+            result = find_best_move(board, depth=depth, color=ClassicColor.white)
+            moving_piece_type = type(board.get(result.move.initial_position))
+            self.assertIsNot(
+                moving_piece_type,
+                King,
+                msg=f"Engine walked the king at depth {depth}: {result.move}",
+            )
+
     def test_engine_finds_back_rank_mate_in_one(self):
         board = nBoard(2, (8, 8), turn_order=(ClassicColor.white, ClassicColor.black))
         board.add(King, (4, 0), ClassicColor.white)
@@ -452,6 +492,74 @@ class EngineSearchTests(unittest.TestCase):
         self.assertIsInstance(entry, TTEntry)
         self.assertIn(entry.bound, {EXACT, LOWER, UPPER})
         self.assertIsNotNone(entry.best_move)
+
+
+class EvaluationKingSafetyTests(unittest.TestCase):
+    def _two_king_board(self, white_king_position):
+        # The only piece that differs between calls is the white king's
+        # square, so any change in centrality / activity must come from
+        # the king itself.
+        board = nBoard(2, (8, 8), turn_order=(ClassicColor.white, ClassicColor.black))
+        board.add(King, white_king_position, ClassicColor.white)
+        board.add(King, (3, 7), ClassicColor.black)
+        return board
+
+    def test_centrality_excludes_king(self):
+        # The king should not influence centrality at all — only non-king
+        # pieces are central candidates.
+        home = self._two_king_board((3, 0))
+        walked = self._two_king_board((3, 4))
+
+        self.assertEqual(
+            centrality(home, ClassicColor.white),
+            centrality(walked, ClassicColor.white),
+        )
+
+    def test_activity_metrics_excludes_king_moves(self):
+        # Same board with the king on a more open square yields the same
+        # activity count, because king mobility no longer contributes.
+        boxed = self._two_king_board((3, 0))
+        open_square = self._two_king_board((3, 4))
+
+        boxed_moves, _ = activity_metrics(boxed, ClassicColor.white)
+        open_moves, _ = activity_metrics(open_square, ClassicColor.white)
+        self.assertEqual(boxed_moves, open_moves)
+
+    def test_endgame_factor_full_board_is_zero(self):
+        board = Board()
+        self.assertAlmostEqual(endgame_factor(board, ClassicColor.white, ClassicColor.black), 0.0, places=5)
+
+    def test_endgame_factor_bare_kings_is_one(self):
+        board = nBoard(2, (8, 8), turn_order=(ClassicColor.white, ClassicColor.black))
+        board.add(King, (3, 0), ClassicColor.white)
+        board.add(King, (3, 7), ClassicColor.black)
+        self.assertAlmostEqual(endgame_factor(board, ClassicColor.white, ClassicColor.black), 1.0, places=5)
+
+    def test_king_safety_penalises_displaced_king_in_middlegame(self):
+        # Need real material on the board so endgame_factor < 1; otherwise
+        # the displacement penalty is fully dampened.
+        def position_with_king_on(rank):
+            board = nBoard(2, (8, 8), turn_order=(ClassicColor.white, ClassicColor.black))
+            board.add(King, (3, rank), ClassicColor.white)
+            board.add(King, (3, 7), ClassicColor.black)
+            board.add(Queen, (4, 0), ClassicColor.white)
+            board.add(Rook, (0, 0), ClassicColor.white)
+            board.add(Rook, (7, 0), ClassicColor.white)
+            board.add(Queen, (4, 7), ClassicColor.black)
+            board.add(Rook, (0, 7), ClassicColor.black)
+            board.add(Rook, (7, 7), ClassicColor.black)
+            for f in range(8):
+                board.add(Pawn, (f, 6), ClassicColor.black)
+            for f in (0, 1, 2, 4, 5, 6, 7):
+                board.add(Pawn, (f, 2), ClassicColor.white)
+            return board
+
+        home = position_with_king_on(0)
+        walked = position_with_king_on(3)
+
+        home_score = king_safety(home, ClassicColor.white, ClassicColor.black)
+        walked_score = king_safety(walked, ClassicColor.white, ClassicColor.black)
+        self.assertLess(walked_score, home_score)
 
 
 class MateScoreTests(unittest.TestCase):

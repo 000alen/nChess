@@ -229,9 +229,13 @@ def pawn_advancement(board: nBoard, color: Color) -> float:
 
 
 def centrality(board: nBoard, color: Color) -> float:
+    # Reward centralization for non-king pieces only. The king is handled
+    # separately by king_safety, which is the right place to weigh
+    # "centralized king" — it's a liability in the middlegame and only a
+    # virtue in the endgame.
     score = 0
     for piece in board.pieces:
-        if piece.color != color:
+        if piece.color != color or type(piece) is King:
             continue
 
         for axis, coordinate in enumerate(piece.position):
@@ -244,10 +248,14 @@ def centrality(board: nBoard, color: Color) -> float:
 
 
 def activity_metrics(board: nBoard, color: Color) -> tuple[int, float]:
+    # King mobility is intentionally excluded from "activity": counting a
+    # king's pseudo-moves as positive activity creates an incentive to walk
+    # the king out into the centre, which is the opposite of what we want
+    # in the middlegame. The non-king pieces' attacks still drive pressure.
     moves = [
         move
         for piece in board.pieces
-        if piece.color == color
+        if piece.color == color and type(piece) is not King
         for move in piece.all_moves()
     ]
     attacked_positions = {move.final_position for move in moves}
@@ -260,12 +268,83 @@ def activity_metrics(board: nBoard, color: Color) -> tuple[int, float]:
     return len(moves), pressure
 
 
+def non_king_material(board: nBoard, color: Color) -> float:
+    return sum(
+        piece_value(piece)
+        for piece in board.pieces
+        if piece.color == color and type(piece) is not King
+    )
+
+
+# Total non-king material on a standard 8x8 starting position is 39 per side
+# (Q9 + R5+5 + B3+3 + N3+3 + P*8). We use the same constant for higher-d
+# boards because the typical material budget scales similarly when sizes
+# stay modest.
+STARTING_NON_KING_MATERIAL = 39.0
+
+
+def endgame_factor(board: nBoard, color: Color, rival_color: Color) -> float:
+    """0.0 = full opening board, 1.0 = bare-kings endgame.
+
+    Used to dial king-safety penalties down as the board empties, so the
+    king is correctly told to stay home in the middlegame but encouraged
+    to centralize in the endgame.
+    """
+    total = non_king_material(board, color) + non_king_material(board, rival_color)
+    if total >= 2 * STARTING_NON_KING_MATERIAL:
+        return 0.0
+    progress = 1.0 - (total / (2 * STARTING_NON_KING_MATERIAL))
+    return max(0.0, min(1.0, progress))
+
+
+def king_displacement(board: nBoard, king, color: Color) -> float:
+    """Sum of axis-wise distances from the king's home square.
+
+    For a 2D board the home square is (cols/2 rounded down, 0) for white
+    and (cols/2 rounded down, last rank) for black — matching the
+    starting layout in nChess/nBoard/Board.py. For higher dimensions we
+    treat axes ≥ 2 the same way as axis 1 (the king starts at the
+    far edge of its forward axes), which mirrors how Pawn.is_promotable
+    is defined today.
+    """
+    home_back_rank = 0 if getattr(color, "name", color) == "white" else board.size[1] - 1
+    displacement = abs(king.position[1] - home_back_rank)
+    for axis in range(2, board.dimension):
+        size = board.size[axis]
+        if size <= 1:
+            continue
+        far = 0 if getattr(color, "name", color) == "white" else size - 1
+        displacement += abs(king.position[axis] - far)
+    # Axis 0 (file) doesn't matter for king safety — castling slides the
+    # king sideways without it being unsafe — so we don't penalise it.
+    return displacement
+
+
 def king_safety(board: nBoard, color: Color, rival_color: Color) -> float:
-    score = 0
+    score = 0.0
     if board.in_check(color):
         score -= 1.5
     if board.in_check(rival_color):
         score += 1.5
+
+    # Stay-home penalty for the king, scaled down as the board empties.
+    # In the middlegame (eg ≈ 0) walking the king one rank up costs ~0.6 of
+    # a pawn, which comfortably outweighs the +0.16 incentive that the old
+    # centrality/activity terms used to hand out for the same move.
+    # In a true endgame (eg ≈ 1) the penalty vanishes and an active king
+    # can again be useful.
+    eg = endgame_factor(board, color, rival_color)
+    middlegame = 1.0 - eg
+    if middlegame > 0:
+        for piece in board.pieces:
+            if type(piece) is not King:
+                continue
+            displacement = king_displacement(board, piece, piece.color)
+            penalty = 0.6 * middlegame * displacement
+            if piece.color == color:
+                score -= penalty
+            elif piece.color == rival_color:
+                score += penalty
     return score
 
 
