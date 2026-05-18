@@ -7,7 +7,7 @@ from typing import Callable
 
 from nChess.nBoard import nBoard, Color
 from nChess.nBoard.Board import Board, ClassicColor
-from nChess.Piece import Move, Piece, PieceData
+from nChess.Piece import Move, Piece
 from nChess.Piece.Bishop import Bishop
 from nChess.Piece.King import King
 from nChess.Piece.Knight import Knight
@@ -101,12 +101,6 @@ def piece_value(piece: Piece) -> float:
     return PIECE_VALUES.get(type(piece), 0)
 
 
-def delta_material(board: nBoard, piece_type, color: Color, rival_color: Color) -> int:
-    return len(board.find(PieceData(color, piece_type))) - len(
-        board.find(PieceData(rival_color, piece_type))
-    )
-
-
 def material(board: nBoard, color: Color, rival_color: Color = None) -> float:
     if rival_color is None:
         rival_color = opponent_color(board, color)
@@ -116,14 +110,6 @@ def material(board: nBoard, color: Color, rival_color: Color = None) -> float:
         else 0
         for piece in board.pieces
     )
-
-
-def mobility(board, color) -> int:
-    return sum(len(piece.moves()) for piece in board.pieces if piece.color == color)
-
-
-def pseudo_mobility(board, color) -> int:
-    return sum(len(piece.all_moves()) for piece in board.pieces if piece.color == color)
 
 
 def colors(board: nBoard) -> tuple[Color, ...]:
@@ -193,10 +179,6 @@ def centrality(board: nBoard, color: Color) -> float:
             center = (board.size[axis] - 1) / 2
             score += 1 - (abs(coordinate - center) / max(center, 1))
     return score
-
-
-def attack_pressure(board: nBoard, color: Color) -> float:
-    return activity_metrics(board, color)[1]
 
 
 def activity_metrics(board: nBoard, color: Color) -> tuple[int, float]:

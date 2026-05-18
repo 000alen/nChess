@@ -262,6 +262,84 @@ class EngineSearchTests(unittest.TestCase):
 
         self.assertEqual(best_move(board, depth=1, color=ClassicColor.white), Move((0, 0), (0, 5)))
 
+    def test_engine_finds_back_rank_mate_in_one(self):
+        board = nBoard(2, (8, 8), turn_order=(ClassicColor.white, ClassicColor.black))
+        board.add(King, (4, 0), ClassicColor.white)
+        board.add(Rook, (0, 6), ClassicColor.white)
+        board.add(Rook, (1, 7), ClassicColor.white)
+        board.add(King, (4, 7), ClassicColor.black)
+
+        result = find_best_move(board, depth=1, color=ClassicColor.white)
+        new_board = board.assume_move(result.move)
+        self.assertTrue(new_board.in_checkmate(ClassicColor.black))
+
+
+class CheckmateAndStalemateTests(unittest.TestCase):
+    def test_back_rank_checkmate_detected(self):
+        board = nBoard(2, (8, 8), turn_order=(ClassicColor.white, ClassicColor.black), turn_number=1)
+        board.add(King, (4, 0), ClassicColor.white)
+        board.add(Rook, (0, 6), ClassicColor.white)
+        board.add(Rook, (0, 7), ClassicColor.white)
+        board.add(King, (4, 7), ClassicColor.black)
+
+        self.assertTrue(board.in_check(ClassicColor.black))
+        self.assertTrue(board.in_checkmate(ClassicColor.black))
+        self.assertFalse(board.in_stalemate(ClassicColor.black))
+
+    def test_corner_stalemate_detected(self):
+        board = nBoard(2, (8, 8), turn_order=(ClassicColor.white, ClassicColor.black), turn_number=1)
+        board.add(King, (5, 5), ClassicColor.white)
+        board.add(Queen, (6, 5), ClassicColor.white)
+        board.add(King, (7, 7), ClassicColor.black)
+
+        self.assertFalse(board.in_check(ClassicColor.black))
+        self.assertFalse(board.in_checkmate(ClassicColor.black))
+        self.assertTrue(board.in_stalemate(ClassicColor.black))
+
+    def test_in_check_detects_pawn_capture_threat(self):
+        board = nBoard(2, (8, 8), turn_order=(ClassicColor.white, ClassicColor.black))
+        board.add(King, (3, 3), ClassicColor.white)
+        board.add(Pawn, (2, 4), ClassicColor.black)
+        board.add(King, (7, 7), ClassicColor.black)
+
+        # Pawn at (2,4) is black, captures along axis 0; one of its capture
+        # squares is (3,3) — the white king's square.
+        self.assertTrue(board.in_check(ClassicColor.white))
+
+
+class MultiDimensionalEngineTests(unittest.TestCase):
+    def test_three_d_pawn_promotion_requires_corner(self):
+        # Documents current behaviour: in higher dimensions, Pawn.is_promotable
+        # only fires when the pawn reaches the far edge in *every* non-capture
+        # axis (i.e., a corner of the forward subspace), not when it reaches
+        # the far edge in any single forward axis.
+        board = nBoard(3, (5, 5, 4), turn_order=(ClassicColor.white, ClassicColor.black))
+        board.add(Pawn, (2, 4, 0), ClassicColor.white)
+        self.assertFalse(board.get((2, 4, 0)).is_promotable())
+
+        board = nBoard(3, (5, 5, 4), turn_order=(ClassicColor.white, ClassicColor.black))
+        board.add(Pawn, (2, 4, 3), ClassicColor.white)
+        self.assertTrue(board.get((2, 4, 3)).is_promotable())
+
+    def test_four_d_queen_at_corner_has_many_legal_moves(self):
+        board = nBoard(4, (4, 4, 4, 4), turn_order=(ClassicColor.white, ClassicColor.black))
+        board.add(Queen, (0, 0, 0, 0), ClassicColor.white)
+        board.add(King, (3, 3, 3, 3), ClassicColor.white)
+        board.add(King, (3, 3, 0, 0), ClassicColor.black)
+
+        moves = board.get((0, 0, 0, 0)).moves()
+        self.assertGreater(len(moves), 30)
+
+    def test_four_d_check_detection(self):
+        # Queen on the same 1D ray attacking the king should produce check
+        # regardless of dimension.
+        board = nBoard(4, (4, 4, 4, 4), turn_order=(ClassicColor.white, ClassicColor.black))
+        board.add(King, (0, 0, 0, 0), ClassicColor.white)
+        board.add(Queen, (3, 0, 0, 0), ClassicColor.black)
+        board.add(King, (3, 3, 3, 3), ClassicColor.black)
+
+        self.assertTrue(board.in_check(ClassicColor.white))
+
 
 class GuiGeometryTests(unittest.TestCase):
     def test_position_padding_extends_to_four_dimensions(self):

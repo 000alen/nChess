@@ -142,11 +142,7 @@ class nBoard:
             return
 
         promotion_type = next(
-            (
-                candidate
-                for candidate in piece.promotions
-                if candidate.__name__ == "Queen"
-            ),
+            (candidate for candidate in piece.promotions if candidate is Queen),
             piece.promotions[0],
         )
         promoted_piece = promotion_type(
@@ -246,28 +242,25 @@ class nBoard:
 
         return False
 
-    def in_checkmate(self, color: Color) -> bool:
-        if not self.in_check(color):
-            return False
-
+    def has_any_legal_move(self, color: Color) -> bool:
+        # piece.moves() already filters out moves that leave the king in check,
+        # so the existence of any move from any piece of `color` proves there is
+        # at least one legal reply available.
         for piece in self.pieces:
             if piece.color != color:
                 continue
+            for _move in piece.moves():
+                return True
+        return False
 
-            for move in piece.moves():
-                new_board = self.assume_move(move)
-                if not new_board.in_check(color):
-                    return False
-
-        return True
+    def in_checkmate(self, color: Color) -> bool:
+        return self.in_check(color) and not self.has_any_legal_move(color)
 
     def in_stalemate(self, color: Color) -> bool:
-        if self.in_check(color):
-            return False
-
-        return all(len(piece.moves()) == 0 for piece in self.pieces if piece.color == color)
+        return not self.in_check(color) and not self.has_any_legal_move(color)
 
 
 # Imported after nBoard is defined because Piece imports nBoard for shared types.
 from nChess.Piece import Piece, Move, PieceData
 from nChess.Piece.King import King
+from nChess.Piece.Queen import Queen
