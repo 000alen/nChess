@@ -382,6 +382,7 @@ def find_best_move(
     color: Color = None,
     evaluator: Evaluator = evaluate_position,
     context: SearchContext = None,
+    preferred_move: Move | None = None,
 ) -> SearchResult:
     if depth < 1:
         raise ValueError("depth must be at least 1")
@@ -391,6 +392,9 @@ def find_best_move(
     if len(moves) == 0:
         score = -MATE_SCORE if board.in_checkmate(color) else DRAW_SCORE
         return SearchResult(None, score, depth, 1)
+
+    if preferred_move is not None and preferred_move in moves:
+        moves = (preferred_move,) + tuple(move for move in moves if move != preferred_move)
 
     nodes = 1
     best_move = None
@@ -445,7 +449,14 @@ def iterative_deepening(
             break
 
         try:
-            result = find_best_move(board, depth, color, evaluator, context)
+            result = find_best_move(
+                board,
+                depth,
+                color,
+                evaluator,
+                context,
+                preferred_move=best_result.move if best_result is not None else None,
+            )
         except SearchTimeout:
             if best_result is None:
                 fallback_color = current_or_requested_color(board, color)

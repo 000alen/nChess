@@ -1,3 +1,4 @@
+from functools import lru_cache
 from itertools import combinations, product
 from typing import TypeVar
 
@@ -48,6 +49,7 @@ class nBoard:
         self.occupied = {piece.position: piece for piece in self.pieces}
 
     @staticmethod
+    @lru_cache(maxsize=8)
     def compute_cardinals(dimension: int) -> tuple[IntegerVector, ...]:
         return tuple(
             tuple(j if k == i else 0 for k in range(dimension))
@@ -56,6 +58,7 @@ class nBoard:
         )
 
     @staticmethod
+    @lru_cache(maxsize=8)
     def compute_diagonals(dimension: int) -> tuple[IntegerVector, ...]:
         return tuple(
             tuple(
@@ -68,6 +71,7 @@ class nBoard:
         )
 
     @staticmethod
+    @lru_cache(maxsize=8)
     def compute_L(dimension: int) -> tuple[IntegerVector, ...]:
         return tuple(
             tuple(
@@ -83,6 +87,7 @@ class nBoard:
         )
 
     @staticmethod
+    @lru_cache(maxsize=8)
     def compute_basis(dimension: int) -> tuple[IntegerVector, ...]:
         return tuple(
             tuple(
@@ -223,23 +228,92 @@ class nBoard:
         
         return new_board
 
-    def in_check(self, color: Color) -> bool:
-        kings_positions = tuple(
-            piece.position
-            for piece in self.pieces
-            if piece.color == color and type(piece) is King
-        )
+    def is_attacked(self, position: IntegerVector, defender_color: Color) -> bool:
+        # Walks attack rays / jumps outward from `position` and asks whether
+        # any non-`defender_color` piece can land on it. This is much cheaper
+        # than regenerating every enemy piece's full move list, and is the hot
+        # path used by `in_check` and (transitively) every legality check.
+        dimension = self.dimension
+        occupied = self.occupied
+        max_ray = max(self.size) - 1
 
-        for piece in self.pieces:
-            if piece.color == color:
+        for direction in self.cardinals:
+            for dist in range(1, max_ray + 1):
+                target = tuple(position[i] + direction[i] * dist for i in range(dimension))
+                if not self.in_bounds(target):
+                    break
+                piece = occupied.get(target)
+                if piece is None:
+                    continue
+                if piece.color != defender_color:
+                    piece_type = type(piece)
+                    if piece_type is Rook or piece_type is Queen:
+                        return True
+                    if piece_type is King and dist == 1:
+                        return True
+                break
+
+        for direction in self.diagonals:
+            for dist in range(1, max_ray + 1):
+                target = tuple(position[i] + direction[i] * dist for i in range(dimension))
+                if not self.in_bounds(target):
+                    break
+                piece = occupied.get(target)
+                if piece is None:
+                    continue
+                if piece.color != defender_color:
+                    piece_type = type(piece)
+                    if piece_type is Bishop or piece_type is Queen:
+                        return True
+                    if piece_type is King and dist == 1:
+                        return True
+                break
+
+        for offset in self.L:
+            target = tuple(position[i] + offset[i] for i in range(dimension))
+            if not self.in_bounds(target):
                 continue
-            if any(
-                king_position == move.final_position
-                for king_position in kings_positions
-                for move in piece.all_moves()
-            ):
+            piece = occupied.get(target)
+            if piece is None:
+                continue
+            if piece.color != defender_color and type(piece) is Knight:
                 return True
 
+        # Pawn capture geometry depends on each pawn's direction and capture
+        # axis; iterate enemy pawns directly and ask whether any of their
+        # capture targets equals `position`. This mirrors the move geometry
+        # in Pawn.all_moves without allocating any Move tuples.
+        for piece in self.pieces:
+            if piece.color == defender_color or type(piece) is not Pawn:
+                continue
+            direction = piece.direction
+            capture_axis = piece.capture_axis
+            origin = piece.position
+            for axis in range(dimension):
+                if axis == capture_axis:
+                    continue
+                for sideways in (-1, 1):
+                    matches = True
+                    for k in range(dimension):
+                        if k == axis:
+                            expected = origin[k] + direction
+                        elif k == capture_axis:
+                            expected = origin[k] + sideways
+                        else:
+                            expected = origin[k]
+                        if expected != position[k]:
+                            matches = False
+                            break
+                    if matches:
+                        return True
+        return False
+
+    def in_check(self, color: Color) -> bool:
+        for piece in self.pieces:
+            if piece.color != color or type(piece) is not King:
+                continue
+            if self.is_attacked(piece.position, color):
+                return True
         return False
 
     def has_any_legal_move(self, color: Color) -> bool:
@@ -262,5 +336,9 @@ class nBoard:
 
 # Imported after nBoard is defined because Piece imports nBoard for shared types.
 from nChess.Piece import Piece, Move, PieceData
+from nChess.Piece.Bishop import Bishop
 from nChess.Piece.King import King
+from nChess.Piece.Knight import Knight
+from nChess.Piece.Pawn import Pawn
 from nChess.Piece.Queen import Queen
+from nChess.Piece.Rook import Rook
