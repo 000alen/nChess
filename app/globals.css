@@ -373,11 +373,36 @@ button {
   gap: var(--space-2);
   height: 100%;
   min-height: 0;
-  overflow-y: auto;
+  overflow: hidden;
   padding: var(--space-2);
   position: static;
-  scrollbar-gutter: stable;
   top: auto;
+}
+
+.side-panel-status,
+.side-panel-settings {
+  flex: 0 0 auto;
+}
+
+.side-panel-status {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.side-panel-settings {
+  display: grid;
+  gap: var(--space-1);
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.side-panel .actions {
+  flex: 0 0 auto;
+}
+
+.side-panel .history-panel {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .panel-title,
@@ -578,8 +603,26 @@ button {
 }
 
 .history-panel {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: var(--space-1);
+  min-height: 0;
+}
+
+.history-panel .history-heading,
+.history-panel .rewind-controls {
+  flex: 0 0 auto;
+}
+
+.history-panel .move-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+.history-panel .captured-panel {
+  flex: 0 0 auto;
 }
 
 .captured-panel {
@@ -733,4 +776,67 @@ button {
   .top-bar strong {
     font-size: 0.9rem;
   }
+}
+
+.popover-overlay {
+  align-items: center;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(2px);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: var(--space-3);
+  position: fixed;
+  z-index: 100;
+}
+
+.popover-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.45);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-height: min(90vh, 720px);
+  max-width: 480px;
+  overflow: hidden;
+  padding: var(--space-3);
+  width: min(100%, 480px);
+}
+
+.popover-header {
+  align-items: center;
+  display: flex;
+  flex: 0 0 auto;
+  justify-content: space-between;
+}
+
+.popover-header h3 {
+  font-size: 1rem;
+  margin: 0;
+}
+
+.popover-close {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 1.1rem;
+  line-height: 1;
+  min-height: 28px;
+  min-width: 32px;
+  padding: 2px 6px;
+}
+
+.popover-close:hover {
+  background: var(--surface-3);
+}
+
+.popover-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
 }

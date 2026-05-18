@@ -1,6 +1,6 @@
 "use client";
 
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
 
@@ -135,6 +135,9 @@ export function NChessBoard() {
   const [isoSpacing, setIsoSpacing] = useState<number>(ISO_SPACING_DEFAULT);
   const [isoLoaded, setIsoLoaded] = useState(false);
   const [isoCameraResetCounter, setIsoCameraResetCounter] = useState(0);
+  const [newGameOpen, setNewGameOpen] = useState(false);
+  const [botSettingsOpen, setBotSettingsOpen] = useState(false);
+  const [isoSettingsOpen, setIsoSettingsOpen] = useState(false);
   const [botEnabled, setBotEnabled] = useState(true);
   const [botColor, setBotColor] = useState<PieceColor>("black");
   const [botDepth, setBotDepth] = useState(2);
@@ -760,58 +763,43 @@ export function NChessBoard() {
         </div>
 
         <aside className="side-panel">
-          <div className="panel-title">
-            <h2>Game state</h2>
-            <span>{botEnabled ? "Vs bot" : "Analysis"}</span>
+          <div className="side-panel-status">
+            <div className="panel-title">
+              <h2>Game state</h2>
+              <span>{botEnabled ? "Vs bot" : "Analysis"}</span>
+            </div>
+            <div className="status">
+              <span>Turn</span>
+              <div className="turn">{botThinking ? "Bot thinking..." : board.turn}</div>
+              {currentStatus ? <StatusLine status={currentStatus} /> : null}
+              {isViewingPast ? <p className="rewind-state">Viewing past position</p> : null}
+            </div>
+            {botError ? <p className="bot-error">{botError}</p> : null}
+            {moveError ? <p className="bot-error">{moveError}</p> : null}
+            {hintError ? <p className="hint-error">{hintError}</p> : null}
+            {hintMove ? (
+              <p className="hint-line">
+                Hint: {positionKey(hintMove.from)} → {positionKey(hintMove.to)}
+              </p>
+            ) : null}
+            {analysisInfo ? <p className="analysis-line">{analysisInfo}</p> : null}
+            {analysisMove ? (
+              <p className="analysis-line">
+                PV: {formatPosition(analysisMove.from)} → {formatPosition(analysisMove.to)}
+              </p>
+            ) : null}
           </div>
-          <div className="status">
-            <span>Turn</span>
-            <div className="turn">{botThinking ? "Bot thinking..." : board.turn}</div>
-            {currentStatus ? <StatusLine status={currentStatus} /> : null}
-            {isViewingPast ? <p className="rewind-state">Viewing past position</p> : null}
-          </div>
-          {botError ? <p className="bot-error">{botError}</p> : null}
-          {moveError ? <p className="bot-error">{moveError}</p> : null}
-          <BoardSetup
-            config={draftConfig}
-            currentConfig={boardConfig}
-            onApply={startNewGame}
-            onChange={setDraftConfig}
-          />
-          {board.dimension >= 3 ? (
-            <IsometricControls
-              isoSpacing={isoSpacing}
-              showSpacing={viewMode === "isometric"}
-              viewMode={viewMode}
-              onIsoSpacingChange={(value) => setIsoSpacing(clamp(value, ISO_SPACING_MIN, ISO_SPACING_MAX))}
-              onResetCamera={() => setIsoCameraResetCounter((value) => value + 1)}
-              onResetSpacing={() => setIsoSpacing(ISO_SPACING_DEFAULT)}
-            />
-          ) : null}
-          <BotSettings
-            botColor={botColor}
-            depth={botDepth}
-            onBotColorChange={setBotColor}
-            timeLimitMs={botTimeLimitMs}
-            onDepthChange={setBotDepth}
-            onTimeLimitChange={setBotTimeLimitMs}
-          />
-          <PromotionSettings
-            promotionChoice={promotionChoice}
-            onPromotionChoiceChange={setPromotionChoice}
-          />
 
           <div className="actions">
             <button className="primary-button" type="button" onClick={resetGame}>
               Reset
             </button>
             <button
-              className="secondary-button"
+              className="primary-button"
               type="button"
-              aria-pressed={botEnabled}
-              onClick={() => setBotEnabled((enabled) => !enabled)}
+              onClick={() => setNewGameOpen(true)}
             >
-              Bot {botEnabled ? "on" : "off"}
+              New game…
             </button>
             <button
               className="secondary-button"
@@ -836,6 +824,14 @@ export function NChessBoard() {
             <button
               className="secondary-button"
               type="button"
+              aria-pressed={botEnabled}
+              onClick={() => setBotEnabled((enabled) => !enabled)}
+            >
+              Bot {botEnabled ? "on" : "off"}
+            </button>
+            <button
+              className="secondary-button"
+              type="button"
               disabled={botThinking}
               onClick={() => {
                 setBoard((currentBoard) => ({ ...currentBoard, turn: nextTurn(currentBoard.turn) }));
@@ -844,18 +840,27 @@ export function NChessBoard() {
               Pass turn
             </button>
           </div>
-          {hintError ? <p className="hint-error">{hintError}</p> : null}
-          {hintMove ? (
-            <p className="hint-line">
-              Hint: {positionKey(hintMove.from)} → {positionKey(hintMove.to)}
-            </p>
-          ) : null}
-          {analysisInfo ? <p className="analysis-line">{analysisInfo}</p> : null}
-          {analysisMove ? (
-            <p className="analysis-line">
-              PV: {formatPosition(analysisMove.from)} → {formatPosition(analysisMove.to)}
-            </p>
-          ) : null}
+
+          <div className="side-panel-settings">
+            <button
+              className="secondary-button compact"
+              type="button"
+              onClick={() => setBotSettingsOpen(true)}
+              aria-label="Open bot settings"
+            >
+              ⚙ Bot settings
+            </button>
+            {board.dimension >= 3 ? (
+              <button
+                className="secondary-button compact"
+                type="button"
+                onClick={() => setIsoSettingsOpen(true)}
+                aria-label="Open 3D scene settings"
+              >
+                ⚙ 3D scene
+              </button>
+            ) : null}
+          </div>
 
           <HistoryPanel
             capturedPieces={capturedPieces}
@@ -865,8 +870,117 @@ export function NChessBoard() {
             onJump={jumpToPly}
           />
         </aside>
+
+        <Popover
+          open={newGameOpen}
+          title="New game"
+          onClose={() => setNewGameOpen(false)}
+        >
+          <BoardSetup
+            config={draftConfig}
+            currentConfig={boardConfig}
+            onApply={(config) => {
+              startNewGame(config);
+              setNewGameOpen(false);
+            }}
+            onChange={setDraftConfig}
+          />
+        </Popover>
+
+        <Popover
+          open={botSettingsOpen}
+          title="Bot settings"
+          onClose={() => setBotSettingsOpen(false)}
+        >
+          <BotSettings
+            botColor={botColor}
+            depth={botDepth}
+            onBotColorChange={setBotColor}
+            timeLimitMs={botTimeLimitMs}
+            onDepthChange={setBotDepth}
+            onTimeLimitChange={setBotTimeLimitMs}
+          />
+          <PromotionSettings
+            promotionChoice={promotionChoice}
+            onPromotionChoiceChange={setPromotionChoice}
+          />
+        </Popover>
+
+        {board.dimension >= 3 ? (
+          <Popover
+            open={isoSettingsOpen}
+            title="3D scene"
+            onClose={() => setIsoSettingsOpen(false)}
+          >
+            <IsometricControls
+              isoSpacing={isoSpacing}
+              showSpacing={viewMode === "isometric"}
+              viewMode={viewMode}
+              onIsoSpacingChange={(value) => setIsoSpacing(clamp(value, ISO_SPACING_MIN, ISO_SPACING_MAX))}
+              onResetCamera={() => {
+                setIsoCameraResetCounter((value) => value + 1);
+                setIsoSettingsOpen(false);
+              }}
+              onResetSpacing={() => setIsoSpacing(ISO_SPACING_DEFAULT)}
+            />
+          </Popover>
+        ) : null}
       </section>
     </main>
+  );
+}
+
+function Popover({
+  children,
+  onClose,
+  open,
+  title,
+}: {
+  children: ReactNode;
+  onClose: () => void;
+  open: boolean;
+  title: string;
+}) {
+  useEffect(() => {
+    if (!open) return;
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  return (
+    <div
+      className="popover-overlay"
+      role="presentation"
+      onClick={onClose}
+    >
+      <div
+        className="popover-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <header className="popover-header">
+          <h3>{title}</h3>
+          <button
+            className="popover-close"
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+          >
+            ×
+          </button>
+        </header>
+        <div className="popover-body">{children}</div>
+      </div>
+    </div>
   );
 }
 
@@ -943,11 +1057,10 @@ function BoardSetup({
       </div>
       <button
         className="primary-button"
-        disabled={isCurrentConfig}
         type="button"
         onClick={() => onApply(normalizedConfig)}
       >
-        New {normalizedConfig.dimension}D game
+        {isCurrentConfig ? "Restart" : `New ${normalizedConfig.dimension}D game`}
       </button>
       <p className="setup-note">Generated starts require at least 4 cells per axis.</p>
     </section>
