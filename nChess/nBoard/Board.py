@@ -1,17 +1,16 @@
-from nChess.Piece import Piece
-from nChess.nBoard import nBoard, Color
+from copy import deepcopy
+from enum import Enum, auto
+
+from nChess.nBoard import nBoard
 from nChess.Piece.Bishop import Bishop
 from nChess.Piece.King import King
 from nChess.Piece.Knight import Knight
 from nChess.Piece.Pawn import Pawn
 from nChess.Piece.Queen import Queen
 from nChess.Piece.Rook import Rook
-from typing import Generic
-from enum import Enum, auto
-from copy import deepcopy
 
 
-class ClassicColor(Generic[Color], Enum):
+class ClassicColor(Enum):
     white = auto()
     black = auto()
 

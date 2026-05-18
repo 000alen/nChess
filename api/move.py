@@ -4,6 +4,7 @@ from http.server import BaseHTTPRequestHandler
 
 from api.chess_api import PIECE_TYPES, build_board, deserialize_move, handle_api_error, new_request_id, position_hash, serialize_board, serialize_move, write_json_response
 from nChess.Piece.Pawn import Pawn
+from nChess.Piece.Queen import Queen
 
 
 class handler(BaseHTTPRequestHandler):
@@ -69,7 +70,7 @@ def apply_promotion_choice(board, initial_piece, move, promotion):
     if promotion not in {"bishop", "knight", "queen", "rook"}:
         raise ValueError("promotion must be bishop, knight, queen, or rook")
     promoted_piece = board.get(move.final_position)
-    if type(promoted_piece).__name__ != "Queen":
+    if type(promoted_piece) is not Queen:
         return
 
     promotion_type = PIECE_TYPES[promotion]
