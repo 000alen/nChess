@@ -571,6 +571,13 @@ export function NChessBoard() {
       </header>
 
       <section className="game-layout" aria-label="nChess game">
+        <VerticalEvaluationBar
+          loading={engineEvaluation.loading}
+          positionHash={board.hash}
+          score={evaluation}
+          source={engineEvaluation.score === null ? "local" : "engine"}
+        />
+
         <div className="board-stack" data-view-mode={board.dimension >= 3 ? viewMode : "flat"}>
           {board.dimension >= 3 ? (
             <div className="iso-canvas-shell" key={`iso-${isoCameraResetCounter}`}>
@@ -618,12 +625,6 @@ export function NChessBoard() {
             {currentStatus ? <StatusLine status={currentStatus} /> : null}
             {isViewingPast ? <p className="rewind-state">Viewing past position</p> : null}
           </div>
-          <EvaluationBar
-            loading={engineEvaluation.loading}
-            positionHash={board.hash}
-            score={evaluation}
-            source={engineEvaluation.score === null ? "local" : "engine"}
-          />
           {botError ? <p className="bot-error">{botError}</p> : null}
           {moveError ? <p className="bot-error">{moveError}</p> : null}
           <BoardSetup
@@ -945,7 +946,7 @@ function PromotionSettings({
   );
 }
 
-function EvaluationBar({
+function VerticalEvaluationBar({
   loading,
   positionHash,
   score,
@@ -958,26 +959,25 @@ function EvaluationBar({
 }) {
   const whitePercent = clamp(50 + score * 4, 4, 96);
   const label = `${score >= 0 ? "+" : ""}${score.toFixed(1)}`;
+  const tooltipParts = [
+    `${source === "engine" ? "Engine" : "Local"} eval ${label}`,
+    positionHash ? `pos ${positionHash}` : null,
+  ].filter(Boolean);
 
   return (
-    <section className="evaluation-card" aria-label={`Evaluation ${label}`}>
-      <div className="evaluation-heading">
-        <span>Evaluation</span>
-        <strong>{loading ? `${label} …` : label}</strong>
+    <aside
+      className="eval-rail"
+      aria-label={`Evaluation ${label}`}
+      title={tooltipParts.join(" · ")}
+    >
+      <span className="eval-rail-score" data-loading={loading || undefined}>
+        {label}
+      </span>
+      <div className="eval-rail-track" aria-hidden="true">
+        <div className="eval-rail-fill" style={{ height: `${whitePercent}%` }} />
+        <div className="eval-rail-marker" style={{ bottom: `${whitePercent}%` }} />
       </div>
-      <p className="evaluation-source">
-        {source === "engine" ? "Python engine score" : "Local material fallback"}
-      </p>
-      {positionHash ? <p className="evaluation-source">Position {positionHash}</p> : null}
-      <div className="evaluation-bar" aria-hidden="true">
-        <div className="evaluation-white" style={{ height: `${whitePercent}%` }} />
-        <div className="evaluation-marker" style={{ bottom: `${whitePercent}%` }} />
-      </div>
-      <div className="evaluation-labels">
-        <span>Black better</span>
-        <span>White better</span>
-      </div>
-    </section>
+    </aside>
   );
 }
 
