@@ -11,8 +11,8 @@ to a browser UI while keeping the Python implementation in the repository as a
 reference engine/model.
 
 The browser can also play against the Python engine through the Vercel
-serverless function at `/api/bot`. The deployed app defaults to human White
-against bot Black, with a toggle for manual play.
+serverless function at `/api/bot`. Game modes include human vs bot (default),
+bot vs bot, human vs human, and analysis. Choose a mode in Settings.
 
 Dependency installs use pnpm with a repository-level minimum release age policy
 (`minimum-release-age=10080`, seven days) in `.npmrc`.

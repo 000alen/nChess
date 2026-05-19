@@ -39,7 +39,7 @@ const COLOR_ANALYSIS = "#22d3ee";
 type BoardScene3DProps = {
   analysisMove: Move | null;
   board: BoardState;
-  canHumanMove: boolean;
+  canInteract: boolean;
   hintMove: Move | null;
   onCellClick: (position: Position) => void | Promise<void>;
   selectedMoves: Move[];
@@ -51,7 +51,7 @@ type BoardScene3DProps = {
 export function BoardScene3D({
   analysisMove,
   board,
-  canHumanMove,
+  canInteract,
   hintMove,
   onCellClick,
   selectedMoves,
@@ -110,7 +110,7 @@ export function BoardScene3D({
           <SceneContents
             analysisMove={analysisMove}
             board={board}
-            canHumanMove={canHumanMove}
+            canInteract={canInteract}
             cols={cols}
             flatCameraPosition={flatCameraPosition}
             flatTarget={flatTarget}
@@ -138,7 +138,7 @@ const SELECTION_BEACON_HEIGHT = 30;
 function SceneContents({
   analysisMove,
   board,
-  canHumanMove,
+  canInteract,
   cols,
   flatCameraPosition,
   flatTarget,
@@ -157,7 +157,7 @@ function SceneContents({
 }: {
   analysisMove: Move | null;
   board: BoardState;
-  canHumanMove: boolean;
+  canInteract: boolean;
   cols: number;
   flatCameraPosition: [number, number, number];
   flatTarget: [number, number, number];
@@ -248,7 +248,7 @@ function SceneContents({
       {slices.map((slice) => (
         <SliceGroup
           board={board}
-          canHumanMove={canHumanMove}
+          canInteract={canInteract}
           captureTargetKeys={captureTargetKeys}
           cols={cols}
           key={sliceKey(slice)}
@@ -277,16 +277,16 @@ function SceneContents({
         />
       ) : null}
 
-      <CanvasInputBridge canHumanMove={canHumanMove} onCellClick={onCellClick} />
+      <CanvasInputBridge canInteract={canInteract} onCellClick={onCellClick} />
     </>
   );
 }
 
 function CanvasInputBridge({
-  canHumanMove,
+  canInteract,
   onCellClick,
 }: {
-  canHumanMove: boolean;
+  canInteract: boolean;
   onCellClick: (position: Position) => void | Promise<void>;
 }) {
   const { gl, camera, scene } = useThree();
@@ -370,7 +370,7 @@ function CanvasInputBridge({
         hoveredRef.current?.userData?.setHovered?.(false);
         target?.userData?.setHovered?.(true);
         hoveredRef.current = target;
-        dom.style.cursor = target && canHumanMove ? "pointer" : "default";
+        dom.style.cursor = target && canInteract ? "pointer" : "default";
       }
     }
 
@@ -390,7 +390,7 @@ function CanvasInputBridge({
       dom.removeEventListener("pointerleave", onPointerLeave);
       clearHovered();
     };
-  }, [camera, canHumanMove, gl.domElement, onCellClick, raycaster, scene]);
+  }, [camera, canInteract, gl.domElement, onCellClick, raycaster, scene]);
 
   return null;
 }
@@ -559,7 +559,7 @@ function cellWorldPosition(
 
 function SliceGroup({
   board,
-  canHumanMove,
+  canInteract,
   captureTargetKeys,
   cols,
   legalTargetKeys,
@@ -568,7 +568,7 @@ function SliceGroup({
   slice,
 }: {
   board: BoardState;
-  canHumanMove: boolean;
+  canInteract: boolean;
   captureTargetKeys: Set<string>;
   cols: number;
   legalTargetKeys: Set<string>;
@@ -586,7 +586,7 @@ function SliceGroup({
       cells.push(
         <Cell
           board={board}
-          canHumanMove={canHumanMove}
+          canInteract={canInteract}
           col={x}
           cols={cols}
           isCapture={captureTargetKeys.has(key)}
@@ -662,7 +662,7 @@ function SliceGroup({
 
 function Cell({
   board,
-  canHumanMove,
+  canInteract,
   col,
   cols,
   isCapture,
@@ -673,7 +673,7 @@ function Cell({
   rows,
 }: {
   board: BoardState;
-  canHumanMove: boolean;
+  canInteract: boolean;
   col: number;
   cols: number;
   isCapture: boolean;
@@ -695,10 +695,10 @@ function Cell({
       ? COLOR_CAPTURE
       : isLegal
         ? COLOR_LEGAL
-        : hovered && canHumanMove
+        : hovered && canInteract
           ? "#facc15"
           : "#000000";
-  const emissiveIntensity = isSelected ? 0.7 : isCapture ? 0.45 : isLegal ? 0.4 : hovered && canHumanMove ? 0.22 : 0;
+  const emissiveIntensity = isSelected ? 0.7 : isCapture ? 0.45 : isLegal ? 0.4 : hovered && canInteract ? 0.22 : 0;
 
   useEffect(() => {
     const mesh = meshRef.current;
