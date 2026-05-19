@@ -22,9 +22,28 @@ import {
   type BoardState,
   type Piece,
   type PieceColor,
-  type PieceKind,
   type Position,
 } from "@/lib/chess";
+import {
+  allowsHint,
+  allowsManualEngineMove,
+  allowsPassTurn,
+  DEFAULT_ENGINE_DEPTH,
+  DEFAULT_ENGINE_TIME_MS,
+  ENGINE_COLOR_STORAGE_KEY,
+  GAME_MODE_STORAGE_KEY,
+  gameModeLabel,
+  gameModeOptions,
+  humanPromotionChoice,
+  isAutoPlayMode,
+  isTerminalForSide,
+  seatsForMode,
+  type GameMode,
+  type GameSeats,
+  type GameStatus,
+  type PlayerKind,
+  type PromotionKind,
+} from "@/lib/game-mode";
 
 type Slice = {
   coordinates: Position;
@@ -36,11 +55,10 @@ const BoardScene3D = dynamic(
   { ssr: false },
 );
 
-type MoveActor = "human" | "bot";
-
 type MoveRecord = {
   id: string;
-  actor: MoveActor;
+  side: PieceColor;
+  playerKind: PlayerKind;
   board: BoardState;
   capturedPiece?: Piece;
   evaluation: number;
@@ -58,11 +76,7 @@ type EngineEvaluation = {
   status: EngineStatus | null;
 };
 
-type EngineStatus = Record<"white" | "black", {
-  inCheck: boolean;
-  inCheckmate: boolean;
-  inStalemate: boolean;
-}>;
+type EngineStatus = GameStatus;
 
 type AnalysisPartial = {
   board?: BoardState;
@@ -108,7 +122,6 @@ type ApiFailurePayload = {
 
 type Theme = "dark" | "light";
 type ViewMode = "flat" | "isometric";
-type PromotionKind = Exclude<PieceKind, "king" | "pawn">;
 const THEME_STORAGE_KEY = "nchess-theme";
 const VIEW_MODE_STORAGE_KEY = "nchess-view-mode";
 const ISO_SPACING_STORAGE_KEY = "nchess-iso-spacing";
@@ -137,13 +150,16 @@ export function NChessBoard() {
   const [isoCameraResetCounter, setIsoCameraResetCounter] = useState(0);
   const [newGameOpen, setNewGameOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [botEnabled, setBotEnabled] = useState(true);
-  const [botColor, setBotColor] = useState<PieceColor>("black");
-  const [botDepth, setBotDepth] = useState(2);
-  const [botTimeLimitMs, setBotTimeLimitMs] = useState(750);
-  const [promotionChoice, setPromotionChoice] = useState<PromotionKind>("queen");
-  const [botThinking, setBotThinking] = useState(false);
-  const [botError, setBotError] = useState<string | null>(null);
+  const [gameMode, setGameMode] = useState<GameMode>("human-bot");
+  const [gameModeLoaded, setGameModeLoaded] = useState(false);
+  const [engineColor, setEngineColor] = useState<PieceColor>("black");
+  const [seats, setSeats] = useState<GameSeats>(() => seatsForMode("human-bot", "black"));
+  const [engineDepth, setEngineDepth] = useState(DEFAULT_ENGINE_DEPTH);
+  const [engineTimeLimitMs, setEngineTimeLimitMs] = useState(DEFAULT_ENGINE_TIME_MS);
+  const [engineThinking, setEngineThinking] = useState(false);
+  const [engineError, setEngineError] = useState<string | null>(null);
+  const [autoPlayPaused, setAutoPlayPaused] = useState(false);
+  const autoPlayAbortRef = useRef(0);
   const [hintMove, setHintMove] = useState<Move | null>(null);
   const [hintThinking, setHintThinking] = useState(false);
   const [hintError, setHintError] = useState<string | null>(null);
@@ -166,7 +182,10 @@ export function NChessBoard() {
   const capturedPieces = useMemo(() => moveHistory.flatMap((record) => (
     record.capturedPiece ? [record.capturedPiece] : []
   )), [moveHistory]);
-  const canHumanMove = !botThinking && (!botEnabled || board.turn !== botColor);
+  const canInteract =
+    !engineThinking
+    && !isViewingPast
+    && seats[board.turn].kind === "human";
   const selectedMoves = legalMovesLoading ? [] : legalMoves;
 
   useEffect(() => {
@@ -274,10 +293,70 @@ export function NChessBoard() {
   }, [isoLoaded, isoSpacing]);
 
   useEffect(() => {
+    if (!gameModeLoaded) {
+      return;
+    }
+    window.localStorage.setItem(GAME_MODE_STORAGE_KEY, gameMode);
+    window.localStorage.setItem(ENGINE_COLOR_STORAGE_KEY, engineColor);
+  }, [engineColor, gameMode, gameModeLoaded]);
+
+  useEffect(() => {
+    const savedMode = window.localStorage.getItem(GAME_MODE_STORAGE_KEY);
+    const savedEngineColor = window.localStorage.getItem(ENGINE_COLOR_STORAGE_KEY);
+    const mode: GameMode =
+      savedMode === "human-bot" || savedMode === "bot-bot" || savedMode === "human-human" || savedMode === "analysis"
+        ? savedMode
+        : "human-bot";
+    const color: PieceColor = savedEngineColor === "white" || savedEngineColor === "black" ? savedEngineColor : "black";
+    setGameMode(mode);
+    setEngineColor(color);
+    setSeats(seatsForMode(mode, color));
+    setGameModeLoaded(true);
+  }, []);
+
+  const didBootstrapAutoPlayRef = useRef(false);
+  useEffect(() => {
+    if (!gameModeLoaded || didBootstrapAutoPlayRef.current || moveHistory.length > 0 || engineThinking) {
+      return;
+    }
+    if (!isAutoPlayMode(gameMode) || seats[board.turn].kind !== "engine") {
+      return;
+    }
+    didBootstrapAutoPlayRef.current = true;
+    void onPositionSettled(board, currentPly);
+  }, [board, currentPly, engineThinking, gameMode, gameModeLoaded, moveHistory.length, seats]);
+
+  function applyGameMode(mode: GameMode, color: PieceColor = engineColor) {
+    setGameMode(mode);
+    setEngineColor(color);
+    const nextSeats = seatsForMode(mode, color);
+    setSeats(nextSeats);
+    setEngineError(null);
+    setAutoPlayPaused(false);
+    if (nextSeats[board.turn].kind === "engine" && !engineThinking) {
+      void onPositionSettled(board, currentPly);
+    }
+  }
+
+  function applyEngineColor(color: PieceColor) {
+    setEngineColor(color);
+    if (gameMode === "human-bot") {
+      setSeats(seatsForMode("human-bot", color));
+    }
+  }
+
+  function updateHumanPromotion(promotion: PromotionKind) {
+    setSeats((current) => ({
+      white: current.white.kind === "human" ? { ...current.white, promotion } : current.white,
+      black: current.black.kind === "human" ? { ...current.black, promotion } : current.black,
+    }));
+  }
+
+  useEffect(() => {
     const controller = new AbortController();
 
     async function loadLegalMoves() {
-      if (!selectedPosition || !canHumanMove) {
+      if (!selectedPosition || !canInteract) {
         setLegalMoves([]);
         return;
       }
@@ -316,7 +395,7 @@ export function NChessBoard() {
 
     void loadLegalMoves();
     return () => controller.abort();
-  }, [board, canHumanMove, selectedPosition]);
+  }, [board, canInteract, selectedPosition]);
 
   function resetGame() {
     startNewGame(boardConfig);
@@ -324,31 +403,37 @@ export function NChessBoard() {
 
   function startNewGame(config: BoardConfig) {
     const nextConfig = normalizeBoardConfig(config);
+    const nextBoard = createInitialBoard(nextConfig);
+    autoPlayAbortRef.current += 1;
     setBoardConfig(nextConfig);
     setDraftConfig(nextConfig);
-    setBoard(createInitialBoard(nextConfig));
+    setBoard(nextBoard);
     setSelectedPosition(null);
     setMoveHistory([]);
     setCurrentPly(0);
-    setBotError(null);
-    setBotThinking(false);
+    setEngineError(null);
+    setEngineThinking(false);
+    setAutoPlayPaused(false);
     clearHint();
     setMoveError(null);
     setLegalMoves([]);
+    void onPositionSettled(nextBoard, 0);
   }
 
   function commitMove(
     currentBoard: BoardState,
     move: Move,
     nextBoard: BoardState,
-    actor: MoveActor,
+    side: PieceColor,
+    playerKind: PlayerKind,
     basePly: number,
     timeMs?: number,
   ): BoardState {
     const movingPiece = pieceAt(currentBoard, move.from);
     const capturedPiece = pieceAt(currentBoard, move.to);
     const record: MoveRecord = {
-      actor,
+      side,
+      playerKind,
       board: nextBoard,
       capturedPiece,
       evaluation: evaluateBoard(nextBoard),
@@ -370,23 +455,25 @@ export function NChessBoard() {
   }
 
   function jumpToPly(ply: number) {
-    if (botThinking) {
+    if (engineThinking) {
       return;
     }
 
+    autoPlayAbortRef.current += 1;
+    setAutoPlayPaused(true);
     const boundedPly = Math.max(0, Math.min(ply, moveHistory.length));
     const targetBoard = boundedPly === 0 ? createInitialBoard(boardConfig) : moveHistory[boundedPly - 1].board;
     setBoard(targetBoard);
     setCurrentPly(boundedPly);
     setSelectedPosition(null);
-    setBotError(null);
+    setEngineError(null);
     setMoveError(null);
     setLegalMoves([]);
     clearHint();
   }
 
   async function handleCellClick(position: Position) {
-    if (!canHumanMove) {
+    if (!canInteract) {
       return;
     }
 
@@ -409,8 +496,17 @@ export function NChessBoard() {
   }
 
   async function requestHumanMove(move: Move) {
+    const side = board.turn;
+    if (seats[side].kind !== "human") {
+      return;
+    }
+
     setMoveError(null);
     try {
+      const promotion =
+        pieceAt(board, move.from)?.kind === "pawn"
+          ? humanPromotionChoice(seats, side)
+          : undefined;
       const response = await fetch("/api/move", {
         method: "POST",
         headers: {
@@ -419,7 +515,7 @@ export function NChessBoard() {
         body: JSON.stringify({
           board,
           move,
-          promotion: pieceAt(board, move.from)?.kind === "pawn" ? promotionChoice : undefined,
+          promotion,
         }),
       });
       const payload = await response.json() as {
@@ -430,12 +526,127 @@ export function NChessBoard() {
       if (!response.ok || !payload.board || !payload.move) {
         throw new Error(responseErrorMessage(payload, "Move request failed"));
       }
-      const nextBoard = commitMove(board, payload.move, payload.board, "human", currentPly, payload.elapsedMs);
+      const nextBoard = commitMove(
+        board,
+        payload.move,
+        payload.board,
+        side,
+        "human",
+        currentPly,
+        payload.elapsedMs,
+      );
       setSelectedPosition(null);
-      await requestBotMove(nextBoard, currentPly + 1);
+      await onPositionSettled(nextBoard, currentPly + 1);
     } catch (error) {
       setMoveError(error instanceof Error ? error.message : "Move request failed");
     }
+  }
+
+  async function onPositionSettled(currentBoard: BoardState, ply: number) {
+    if (isTerminalForSide(engineEvaluation.status, currentBoard.turn)) {
+      return;
+    }
+    if (seats[currentBoard.turn].kind !== "engine") {
+      return;
+    }
+    if (autoPlayPaused && isAutoPlayMode(gameMode)) {
+      return;
+    }
+    await requestEngineMove(currentBoard, ply);
+  }
+
+  async function requestEngineMove(currentBoard: BoardState, basePly = currentPly) {
+    const color = currentBoard.turn;
+    const seat = seats[color];
+    if (seat.kind !== "engine") {
+      return;
+    }
+
+    const session = autoPlayAbortRef.current + 1;
+    autoPlayAbortRef.current = session;
+    setEngineThinking(true);
+    setEngineError(null);
+    clearHint();
+
+    try {
+      const finalPartial = await streamAnalysis({
+        board: currentBoard,
+        color,
+        maxDepth: engineDepth,
+        timeLimitMs: engineTimeLimitMs,
+        onPartial: (partial) => {
+          applyAnalysisMate(partial);
+        },
+      });
+
+      if (session !== autoPlayAbortRef.current) {
+        return;
+      }
+
+      if (!finalPartial?.move) {
+        setEngineError(errorMessage(finalPartial?.error, "Engine has no legal move."));
+        return;
+      }
+      applyAnalysisMate(finalPartial);
+
+      const engineMove = finalPartial.move;
+      let nextBoard: BoardState;
+      if (finalPartial.board) {
+        nextBoard = commitMove(
+          currentBoard,
+          engineMove,
+          finalPartial.board,
+          color,
+          "engine",
+          basePly,
+          finalPartial.elapsedMs,
+        );
+      } else {
+        const response = await fetch("/api/move", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            board: currentBoard,
+            move: engineMove,
+            promotion: pieceAt(currentBoard, engineMove.from)?.kind === "pawn" ? seat.promotion : undefined,
+          }),
+        });
+        const movePayload = await response.json() as { board?: BoardState; elapsedMs?: number };
+        if (!response.ok || !movePayload.board) {
+          throw new Error("Engine move application failed");
+        }
+        nextBoard = commitMove(
+          currentBoard,
+          engineMove,
+          movePayload.board,
+          color,
+          "engine",
+          basePly,
+          movePayload.elapsedMs,
+        );
+      }
+
+      if (session !== autoPlayAbortRef.current) {
+        return;
+      }
+
+      await onPositionSettled(nextBoard, basePly + 1);
+    } catch (error) {
+      if (session === autoPlayAbortRef.current) {
+        setEngineError(error instanceof Error ? error.message : "Engine request failed");
+      }
+    } finally {
+      if (session === autoPlayAbortRef.current) {
+        setEngineThinking(false);
+      }
+    }
+  }
+
+  function resumeAutoPlay() {
+    setAutoPlayPaused(false);
+    void onPositionSettled(board, currentPly);
   }
 
   function clearHint() {
@@ -476,8 +687,8 @@ export function NChessBoard() {
       const finalPartial = await streamAnalysis({
         board,
         color: board.turn,
-        maxDepth: botDepth,
-        timeLimitMs: botTimeLimitMs,
+        maxDepth: engineDepth,
+        timeLimitMs: engineTimeLimitMs,
         onPartial: (partial) => {
           if (partial.move) {
             setHintMove(partial.move);
@@ -630,62 +841,6 @@ export function NChessBoard() {
     return latestPartial;
   }
 
-  async function requestBotMove(currentBoard: BoardState, basePly = currentPly) {
-    if (!botEnabled || currentBoard.turn !== botColor) {
-      return;
-    }
-
-    setBotThinking(true);
-    setBotError(null);
-    try {
-      const finalPartial = await streamAnalysis({
-        board: currentBoard,
-        color: botColor,
-        maxDepth: botDepth,
-        timeLimitMs: botTimeLimitMs,
-        onPartial: (partial) => {
-          if (partial.move) {
-            setHintMove(partial.move);
-            setAnalysisMove(partial.move);
-          }
-          setAnalysisInfo(formatAnalysisInfo(partial));
-          applyAnalysisMate(partial);
-        },
-      });
-
-      if (!finalPartial?.move) {
-        setBotError(errorMessage(finalPartial?.error, "Bot has no legal move."));
-        return;
-      }
-      applyAnalysisMate(finalPartial);
-
-      const botMove = finalPartial.move;
-      if (finalPartial.board) {
-        commitMove(currentBoard, botMove, finalPartial.board, "bot", basePly, finalPartial.elapsedMs);
-      } else {
-        const response = await fetch("/api/move", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            board: currentBoard,
-            move: botMove,
-          }),
-        });
-        const movePayload = await response.json() as { board?: BoardState; elapsedMs?: number };
-        if (!response.ok || !movePayload.board) {
-          throw new Error("Bot move application failed");
-        }
-        commitMove(currentBoard, botMove, movePayload.board, "bot", basePly, movePayload.elapsedMs);
-      }
-    } catch (error) {
-      setBotError(error instanceof Error ? error.message : "Bot request failed");
-    } finally {
-      setBotThinking(false);
-    }
-  }
-
   return (
     <main className="page-shell" data-theme={theme}>
       <header className="top-bar">
@@ -695,22 +850,27 @@ export function NChessBoard() {
         </div>
         <div className="top-bar-actions">
           <SettingsMenu
-            botColor={botColor}
-            botDepth={botDepth}
-            botTimeLimitMs={botTimeLimitMs}
+            engineColor={engineColor}
+            engineDepth={engineDepth}
+            engineTimeLimitMs={engineTimeLimitMs}
+            gameMode={gameMode}
             is3D={board.dimension >= 3}
             isoSpacing={isoSpacing}
             open={settingsOpen}
-            promotionChoice={promotionChoice}
+            promotionChoice={humanPromotionChoice(
+              seats,
+              seats.white.kind === "human" ? "white" : "black",
+            )}
             showIsoSpacing={viewMode === "isometric"}
             theme={theme}
             viewMode={viewMode}
-            onBotColorChange={setBotColor}
-            onBotDepthChange={setBotDepth}
-            onBotTimeLimitChange={setBotTimeLimitMs}
+            onEngineColorChange={applyEngineColor}
+            onEngineDepthChange={setEngineDepth}
+            onEngineTimeLimitChange={setEngineTimeLimitMs}
+            onGameModeChange={applyGameMode}
             onIsoSpacingChange={(value) => setIsoSpacing(clamp(value, ISO_SPACING_MIN, ISO_SPACING_MAX))}
             onOpenChange={setSettingsOpen}
-            onPromotionChoiceChange={setPromotionChoice}
+            onPromotionChoiceChange={updateHumanPromotion}
             onResetCamera={() => {
               setIsoCameraResetCounter((value) => value + 1);
               setSettingsOpen(false);
@@ -737,7 +897,7 @@ export function NChessBoard() {
               <BoardScene3D
                 analysisMove={analysisMove}
                 board={board}
-                canHumanMove={canHumanMove}
+                canInteract={canInteract}
                 hintMove={hintMove}
                 selectedMoves={selectedMoves}
                 selectedPosition={selectedPosition}
@@ -752,7 +912,7 @@ export function NChessBoard() {
                 <BoardSlice
                   key={slice.coordinates.join(",") || "2d"}
                   board={board}
-                  canHumanMove={canHumanMove}
+                  canInteract={canInteract}
                   hintMove={hintMove}
                   slice={slice}
                   selectedMoves={selectedMoves}
@@ -771,15 +931,15 @@ export function NChessBoard() {
           <div className="side-panel-status">
             <div className="panel-title">
               <h2>Game state</h2>
-              <span>{botEnabled ? "Vs bot" : "Analysis"}</span>
+              <span>{gameModeLabel(gameMode)}</span>
             </div>
             <div className="status">
               <span>Turn</span>
-              <div className="turn">{botThinking ? "Bot thinking..." : board.turn}</div>
+              <div className="turn">{engineThinking ? "Engine thinking..." : board.turn}</div>
               {currentStatus ? <StatusLine status={currentStatus} /> : null}
               {isViewingPast ? <p className="rewind-state">Viewing past position</p> : null}
             </div>
-            {botError ? <p className="bot-error">{botError}</p> : null}
+            {engineError ? <p className="bot-error">{engineError}</p> : null}
             {moveError ? <p className="bot-error">{moveError}</p> : null}
             {hintError ? <p className="hint-error">{hintError}</p> : null}
             {hintMove ? (
@@ -806,50 +966,66 @@ export function NChessBoard() {
             >
               New game…
             </button>
-            <button
-              className="secondary-button"
-              type="button"
-              disabled={hintThinking || botThinking}
-              onClick={() => {
-                void requestHint();
-              }}
-            >
-              {hintThinking ? "Hint..." : "Hint"}
-            </button>
-            <button
-              className="secondary-button"
-              type="button"
-              disabled={botThinking || board.turn !== botColor}
-              onClick={() => {
-                void requestBotMove(board, currentPly);
-              }}
-            >
-              Bot move
-            </button>
-            <button
-              className="secondary-button"
-              type="button"
-              aria-pressed={botEnabled}
-              onClick={() => setBotEnabled((enabled) => !enabled)}
-            >
-              Bot {botEnabled ? "on" : "off"}
-            </button>
-            <button
-              className="secondary-button"
-              type="button"
-              disabled={botThinking}
-              onClick={() => {
-                setBoard((currentBoard) => ({ ...currentBoard, turn: nextTurn(currentBoard.turn) }));
-              }}
-            >
-              Pass turn
-            </button>
+            {allowsHint(gameMode) ? (
+              <button
+                className="secondary-button"
+                type="button"
+                disabled={hintThinking || engineThinking}
+                onClick={() => {
+                  void requestHint();
+                }}
+              >
+                {hintThinking ? "Hint..." : "Hint"}
+              </button>
+            ) : null}
+            {allowsManualEngineMove(seats, board.turn) ? (
+              <button
+                className="secondary-button"
+                type="button"
+                disabled={engineThinking}
+                onClick={() => {
+                  void requestEngineMove(board, currentPly);
+                }}
+              >
+                Engine move
+              </button>
+            ) : null}
+            {isAutoPlayMode(gameMode) ? (
+              <button
+                className="secondary-button"
+                type="button"
+                disabled={engineThinking}
+                aria-pressed={!autoPlayPaused}
+                onClick={() => {
+                  if (autoPlayPaused) {
+                    resumeAutoPlay();
+                  } else {
+                    autoPlayAbortRef.current += 1;
+                    setAutoPlayPaused(true);
+                  }
+                }}
+              >
+                {autoPlayPaused ? "Play" : "Pause"}
+              </button>
+            ) : null}
+            {allowsPassTurn(gameMode) ? (
+              <button
+                className="secondary-button"
+                type="button"
+                disabled={engineThinking}
+                onClick={() => {
+                  setBoard((currentBoard) => ({ ...currentBoard, turn: nextTurn(currentBoard.turn) }));
+                }}
+              >
+                Pass turn
+              </button>
+            ) : null}
           </div>
 
           <HistoryPanel
             capturedPieces={capturedPieces}
             currentPly={currentPly}
-            disabled={botThinking}
+            disabled={engineThinking}
             moveHistory={moveHistory}
             onJump={jumpToPly}
           />
@@ -931,9 +1107,10 @@ function Popover({
 }
 
 function SettingsMenu({
-  botColor,
-  botDepth,
-  botTimeLimitMs,
+  engineColor,
+  engineDepth,
+  engineTimeLimitMs,
+  gameMode,
   is3D,
   isoSpacing,
   open,
@@ -941,9 +1118,10 @@ function SettingsMenu({
   showIsoSpacing,
   theme,
   viewMode,
-  onBotColorChange,
-  onBotDepthChange,
-  onBotTimeLimitChange,
+  onEngineColorChange,
+  onEngineDepthChange,
+  onEngineTimeLimitChange,
+  onGameModeChange,
   onIsoSpacingChange,
   onOpenChange,
   onPromotionChoiceChange,
@@ -952,9 +1130,10 @@ function SettingsMenu({
   onThemeChange,
   onViewModeChange,
 }: {
-  botColor: PieceColor;
-  botDepth: number;
-  botTimeLimitMs: number;
+  engineColor: PieceColor;
+  engineDepth: number;
+  engineTimeLimitMs: number;
+  gameMode: GameMode;
   is3D: boolean;
   isoSpacing: number;
   open: boolean;
@@ -962,9 +1141,10 @@ function SettingsMenu({
   showIsoSpacing: boolean;
   theme: Theme;
   viewMode: ViewMode;
-  onBotColorChange: (color: PieceColor) => void;
-  onBotDepthChange: (depth: number) => void;
-  onBotTimeLimitChange: (timeLimitMs: number) => void;
+  onEngineColorChange: (color: PieceColor) => void;
+  onEngineDepthChange: (depth: number) => void;
+  onEngineTimeLimitChange: (timeLimitMs: number) => void;
+  onGameModeChange: (mode: GameMode) => void;
   onIsoSpacingChange: (value: number) => void;
   onOpenChange: (open: boolean) => void;
   onPromotionChoiceChange: (kind: PromotionKind) => void;
@@ -1015,6 +1195,7 @@ function SettingsMenu({
           aria-label="Settings"
           onClick={(event) => event.stopPropagation()}
         >
+          <GameModeSettings gameMode={gameMode} onGameModeChange={onGameModeChange} />
           <DisplaySettings
             is3D={is3D}
             theme={theme}
@@ -1022,18 +1203,23 @@ function SettingsMenu({
             onThemeChange={onThemeChange}
             onViewModeChange={onViewModeChange}
           />
-          <BotSettings
-            botColor={botColor}
-            depth={botDepth}
-            timeLimitMs={botTimeLimitMs}
-            onBotColorChange={onBotColorChange}
-            onDepthChange={onBotDepthChange}
-            onTimeLimitChange={onBotTimeLimitChange}
-          />
-          <PromotionSettings
-            promotionChoice={promotionChoice}
-            onPromotionChoiceChange={onPromotionChoiceChange}
-          />
+          {gameMode === "human-bot" || gameMode === "bot-bot" ? (
+            <EngineSettings
+              depth={engineDepth}
+              engineColor={engineColor}
+              showEngineColor={gameMode === "human-bot"}
+              timeLimitMs={engineTimeLimitMs}
+              onDepthChange={onEngineDepthChange}
+              onEngineColorChange={onEngineColorChange}
+              onTimeLimitChange={onEngineTimeLimitChange}
+            />
+          ) : null}
+          {gameMode !== "bot-bot" ? (
+            <PromotionSettings
+              promotionChoice={promotionChoice}
+              onPromotionChoiceChange={onPromotionChoiceChange}
+            />
+          ) : null}
           {is3D ? (
             <IsometricControls
               isoSpacing={isoSpacing}
@@ -1228,35 +1414,66 @@ function IsometricControls({
   );
 }
 
-function BotSettings({
-  botColor,
+function GameModeSettings({
+  gameMode,
+  onGameModeChange,
+}: {
+  gameMode: GameMode;
+  onGameModeChange: (mode: GameMode) => void;
+}) {
+  return (
+    <section className="setup-card" aria-label="Game mode">
+      <div className="setup-heading">
+        <h3>Game mode</h3>
+        <span>{gameModeLabel(gameMode)}</span>
+      </div>
+      <label className="field">
+        <span>Mode</span>
+        <select value={gameMode} onChange={(event) => onGameModeChange(event.target.value as GameMode)}>
+          {gameModeOptions().map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </label>
+    </section>
+  );
+}
+
+function EngineSettings({
   depth,
+  engineColor,
+  showEngineColor,
   timeLimitMs,
-  onBotColorChange,
   onDepthChange,
+  onEngineColorChange,
   onTimeLimitChange,
 }: {
-  botColor: PieceColor;
   depth: number;
+  engineColor: PieceColor;
+  showEngineColor: boolean;
   timeLimitMs: number;
-  onBotColorChange: (color: PieceColor) => void;
   onDepthChange: (depth: number) => void;
+  onEngineColorChange: (color: PieceColor) => void;
   onTimeLimitChange: (timeLimitMs: number) => void;
 }) {
   return (
-    <section className="setup-card" aria-label="Bot settings">
+    <section className="setup-card" aria-label="Engine settings">
       <div className="setup-heading">
-        <h3>Bot settings</h3>
+        <h3>Engine</h3>
         <span>Timed search</span>
       </div>
       <div className="axis-grid">
-        <label className="field">
-          <span>Bot color</span>
-          <select value={botColor} onChange={(event) => onBotColorChange(event.target.value as PieceColor)}>
-            <option value="black">Black</option>
-            <option value="white">White</option>
-          </select>
-        </label>
+        {showEngineColor ? (
+          <label className="field">
+            <span>Engine color</span>
+            <select value={engineColor} onChange={(event) => onEngineColorChange(event.target.value as PieceColor)}>
+              <option value="black">Black</option>
+              <option value="white">White</option>
+            </select>
+          </label>
+        ) : null}
         <label className="field">
           <span>Depth</span>
           <input
@@ -1413,7 +1630,10 @@ function HistoryPanel({
                 <span className="move-meta">
                   <span className="move-eval">{formatScore(record.evaluation)}</span>
                   {typeof record.timeMs === "number" ? <span className="move-time">{formatTime(record.timeMs)}</span> : null}
-                  <span className="move-actor">{record.actor}</span>
+                  <span className="move-actor">
+                    {record.side}
+                    {record.playerKind === "engine" ? " (engine)" : ""}
+                  </span>
                 </span>
               </button>
             </li>
@@ -1462,7 +1682,7 @@ function StatusLine({ status }: { status: EngineStatus["white"] }) {
 
 function BoardSlice({
   board,
-  canHumanMove,
+  canInteract,
   hintMove,
   slice,
   selectedMoves,
@@ -1471,7 +1691,7 @@ function BoardSlice({
   onDropMove,
 }: {
   board: BoardState;
-  canHumanMove: boolean;
+  canInteract: boolean;
   hintMove: Move | null;
   slice: Slice;
   selectedMoves: Move[];
@@ -1491,7 +1711,7 @@ function BoardSlice({
         <BoardCell
           key={positionKey(position)}
           board={board}
-          canHumanMove={canHumanMove}
+          canInteract={canInteract}
           hintMove={hintMove}
           position={position}
           selectedMoves={selectedMoves}
@@ -1559,7 +1779,7 @@ function HintArrow({
 
 function BoardCell({
   board,
-  canHumanMove,
+  canInteract,
   hintMove,
   position,
   selectedMoves,
@@ -1568,7 +1788,7 @@ function BoardCell({
   onDropMove,
 }: {
   board: BoardState;
-  canHumanMove: boolean;
+  canInteract: boolean;
   hintMove: Move | null;
   position: Position;
   selectedMoves: Move[];
@@ -1592,7 +1812,7 @@ function BoardCell({
         legalMove ? "legal" : "",
         isCapture ? "capture" : "",
       ].filter(Boolean).join(" ")}
-      draggable={Boolean(canHumanMove && piece?.color === board.turn)}
+      draggable={Boolean(canInteract && piece?.color === board.turn)}
       type="button"
       onDragOver={(event) => {
         event.preventDefault();
