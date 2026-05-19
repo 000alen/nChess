@@ -379,21 +379,43 @@ button {
   top: auto;
 }
 
-.side-panel-status,
-.side-panel-settings {
-  flex: 0 0 auto;
-}
-
 .side-panel-status {
+  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
 }
 
-.side-panel-settings {
-  display: grid;
+.settings-menu {
+  position: relative;
+}
+
+.settings-menu-trigger {
+  white-space: nowrap;
+}
+
+.settings-dropdown {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-height: min(80vh, 640px);
+  overflow-y: auto;
+  padding: var(--space-2);
+  position: absolute;
+  right: 0;
+  scrollbar-gutter: stable;
+  top: calc(100% + var(--space-1));
+  width: min(92vw, 320px);
+  z-index: 50;
+}
+
+.settings-toggle-row {
+  display: flex;
+  flex-wrap: wrap;
   gap: var(--space-1);
-  grid-template-columns: repeat(2, 1fr);
 }
 
 .side-panel .actions {
