@@ -314,16 +314,17 @@ export function NChessBoard() {
     setGameModeLoaded(true);
   }, []);
 
+  const didBootstrapAutoPlayRef = useRef(false);
   useEffect(() => {
-    if (!gameModeLoaded || moveHistory.length > 0 || engineThinking) {
+    if (!gameModeLoaded || didBootstrapAutoPlayRef.current || moveHistory.length > 0 || engineThinking) {
       return;
     }
-    if (isAutoPlayMode(gameMode) && seats[board.turn].kind === "engine") {
-      void onPositionSettled(board, currentPly);
+    if (!isAutoPlayMode(gameMode) || seats[board.turn].kind !== "engine") {
+      return;
     }
-    // Run once when a saved bot-bot session loads at the starting position.
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional single bootstrap
-  }, [gameModeLoaded]);
+    didBootstrapAutoPlayRef.current = true;
+    void onPositionSettled(board, currentPly);
+  }, [board, currentPly, engineThinking, gameMode, gameModeLoaded, moveHistory.length, seats]);
 
   function applyGameMode(mode: GameMode, color: PieceColor = engineColor) {
     setGameMode(mode);
