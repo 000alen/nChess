@@ -2,7 +2,7 @@
 
 import type { CSSProperties, ReactNode } from "react";
 import dynamic from "next/dynamic";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   createInitialBoard,
@@ -136,8 +136,7 @@ export function NChessBoard() {
   const [isoLoaded, setIsoLoaded] = useState(false);
   const [isoCameraResetCounter, setIsoCameraResetCounter] = useState(0);
   const [newGameOpen, setNewGameOpen] = useState(false);
-  const [botSettingsOpen, setBotSettingsOpen] = useState(false);
-  const [isoSettingsOpen, setIsoSettingsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [botEnabled, setBotEnabled] = useState(true);
   const [botColor, setBotColor] = useState<PieceColor>("black");
   const [botDepth, setBotDepth] = useState(2);
@@ -695,25 +694,31 @@ export function NChessBoard() {
           <strong>{board.dimension}D Chess Arena</strong>
         </div>
         <div className="top-bar-actions">
-          {board.dimension >= 3 ? (
-            <button
-              className="theme-toggle"
-              type="button"
-              aria-pressed={viewMode === "isometric"}
-              aria-label={`Switch to ${viewMode === "isometric" ? "flat" : "isometric"} view`}
-              onClick={() => setViewMode((current) => (current === "isometric" ? "flat" : "isometric"))}
-            >
-              {viewMode === "isometric" ? "Flat view" : "Isometric"}
-            </button>
-          ) : null}
-          <button
-            className="theme-toggle"
-            type="button"
-            aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
-            onClick={() => setTheme((currentTheme) => (currentTheme === "dark" ? "light" : "dark"))}
-          >
-            {theme === "dark" ? "Light mode" : "Dark mode"}
-          </button>
+          <SettingsMenu
+            botColor={botColor}
+            botDepth={botDepth}
+            botTimeLimitMs={botTimeLimitMs}
+            is3D={board.dimension >= 3}
+            isoSpacing={isoSpacing}
+            open={settingsOpen}
+            promotionChoice={promotionChoice}
+            showIsoSpacing={viewMode === "isometric"}
+            theme={theme}
+            viewMode={viewMode}
+            onBotColorChange={setBotColor}
+            onBotDepthChange={setBotDepth}
+            onBotTimeLimitChange={setBotTimeLimitMs}
+            onIsoSpacingChange={(value) => setIsoSpacing(clamp(value, ISO_SPACING_MIN, ISO_SPACING_MAX))}
+            onOpenChange={setSettingsOpen}
+            onPromotionChoiceChange={setPromotionChoice}
+            onResetCamera={() => {
+              setIsoCameraResetCounter((value) => value + 1);
+              setSettingsOpen(false);
+            }}
+            onResetSpacing={() => setIsoSpacing(ISO_SPACING_DEFAULT)}
+            onThemeChange={setTheme}
+            onViewModeChange={setViewMode}
+          />
         </div>
       </header>
 
@@ -841,27 +846,6 @@ export function NChessBoard() {
             </button>
           </div>
 
-          <div className="side-panel-settings">
-            <button
-              className="secondary-button compact"
-              type="button"
-              onClick={() => setBotSettingsOpen(true)}
-              aria-label="Open bot settings"
-            >
-              ⚙ Bot settings
-            </button>
-            {board.dimension >= 3 ? (
-              <button
-                className="secondary-button compact"
-                type="button"
-                onClick={() => setIsoSettingsOpen(true)}
-                aria-label="Open 3D scene settings"
-              >
-                ⚙ 3D scene
-              </button>
-            ) : null}
-          </div>
-
           <HistoryPanel
             capturedPieces={capturedPieces}
             currentPly={currentPly}
@@ -887,44 +871,6 @@ export function NChessBoard() {
           />
         </Popover>
 
-        <Popover
-          open={botSettingsOpen}
-          title="Bot settings"
-          onClose={() => setBotSettingsOpen(false)}
-        >
-          <BotSettings
-            botColor={botColor}
-            depth={botDepth}
-            onBotColorChange={setBotColor}
-            timeLimitMs={botTimeLimitMs}
-            onDepthChange={setBotDepth}
-            onTimeLimitChange={setBotTimeLimitMs}
-          />
-          <PromotionSettings
-            promotionChoice={promotionChoice}
-            onPromotionChoiceChange={setPromotionChoice}
-          />
-        </Popover>
-
-        {board.dimension >= 3 ? (
-          <Popover
-            open={isoSettingsOpen}
-            title="3D scene"
-            onClose={() => setIsoSettingsOpen(false)}
-          >
-            <IsometricControls
-              isoSpacing={isoSpacing}
-              showSpacing={viewMode === "isometric"}
-              viewMode={viewMode}
-              onIsoSpacingChange={(value) => setIsoSpacing(clamp(value, ISO_SPACING_MIN, ISO_SPACING_MAX))}
-              onResetCamera={() => {
-                setIsoCameraResetCounter((value) => value + 1);
-                setIsoSettingsOpen(false);
-              }}
-              onResetSpacing={() => setIsoSpacing(ISO_SPACING_DEFAULT)}
-            />
-          </Popover>
-        ) : null}
       </section>
     </main>
   );
@@ -981,6 +927,168 @@ function Popover({
         <div className="popover-body">{children}</div>
       </div>
     </div>
+  );
+}
+
+function SettingsMenu({
+  botColor,
+  botDepth,
+  botTimeLimitMs,
+  is3D,
+  isoSpacing,
+  open,
+  promotionChoice,
+  showIsoSpacing,
+  theme,
+  viewMode,
+  onBotColorChange,
+  onBotDepthChange,
+  onBotTimeLimitChange,
+  onIsoSpacingChange,
+  onOpenChange,
+  onPromotionChoiceChange,
+  onResetCamera,
+  onResetSpacing,
+  onThemeChange,
+  onViewModeChange,
+}: {
+  botColor: PieceColor;
+  botDepth: number;
+  botTimeLimitMs: number;
+  is3D: boolean;
+  isoSpacing: number;
+  open: boolean;
+  promotionChoice: PromotionKind;
+  showIsoSpacing: boolean;
+  theme: Theme;
+  viewMode: ViewMode;
+  onBotColorChange: (color: PieceColor) => void;
+  onBotDepthChange: (depth: number) => void;
+  onBotTimeLimitChange: (timeLimitMs: number) => void;
+  onIsoSpacingChange: (value: number) => void;
+  onOpenChange: (open: boolean) => void;
+  onPromotionChoiceChange: (kind: PromotionKind) => void;
+  onResetCamera: () => void;
+  onResetSpacing: () => void;
+  onThemeChange: (theme: Theme) => void;
+  onViewModeChange: (mode: ViewMode) => void;
+}) {
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        onOpenChange(false);
+      }
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open, onOpenChange]);
+
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(event: MouseEvent) {
+      if (rootRef.current && !rootRef.current.contains(event.target as Node)) {
+        onOpenChange(false);
+      }
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, [open, onOpenChange]);
+
+  return (
+    <div className="settings-menu" ref={rootRef}>
+      <button
+        className="theme-toggle settings-menu-trigger"
+        type="button"
+        aria-expanded={open}
+        aria-haspopup="dialog"
+        onClick={() => onOpenChange(!open)}
+      >
+        ⚙ Settings
+      </button>
+      {open ? (
+        <div
+          className="settings-dropdown"
+          role="dialog"
+          aria-label="Settings"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <DisplaySettings
+            is3D={is3D}
+            theme={theme}
+            viewMode={viewMode}
+            onThemeChange={onThemeChange}
+            onViewModeChange={onViewModeChange}
+          />
+          <BotSettings
+            botColor={botColor}
+            depth={botDepth}
+            timeLimitMs={botTimeLimitMs}
+            onBotColorChange={onBotColorChange}
+            onDepthChange={onBotDepthChange}
+            onTimeLimitChange={onBotTimeLimitChange}
+          />
+          <PromotionSettings
+            promotionChoice={promotionChoice}
+            onPromotionChoiceChange={onPromotionChoiceChange}
+          />
+          {is3D ? (
+            <IsometricControls
+              isoSpacing={isoSpacing}
+              showSpacing={showIsoSpacing}
+              viewMode={viewMode}
+              onIsoSpacingChange={onIsoSpacingChange}
+              onResetCamera={onResetCamera}
+              onResetSpacing={onResetSpacing}
+            />
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function DisplaySettings({
+  is3D,
+  theme,
+  viewMode,
+  onThemeChange,
+  onViewModeChange,
+}: {
+  is3D: boolean;
+  theme: Theme;
+  viewMode: ViewMode;
+  onThemeChange: (theme: Theme) => void;
+  onViewModeChange: (mode: ViewMode) => void;
+}) {
+  return (
+    <section className="setup-card" aria-label="Display settings">
+      <div className="setup-heading">
+        <h3>Display</h3>
+        <span>Theme & view</span>
+      </div>
+      <div className="settings-toggle-row">
+        <button
+          className="secondary-button compact"
+          type="button"
+          onClick={() => onThemeChange(theme === "dark" ? "light" : "dark")}
+        >
+          {theme === "dark" ? "Light mode" : "Dark mode"}
+        </button>
+        {is3D ? (
+          <button
+            className="secondary-button compact"
+            type="button"
+            aria-pressed={viewMode === "isometric"}
+            onClick={() => onViewModeChange(viewMode === "isometric" ? "flat" : "isometric")}
+          >
+            {viewMode === "isometric" ? "Flat view" : "Isometric"}
+          </button>
+        ) : null}
+      </div>
+    </section>
   );
 }
 
