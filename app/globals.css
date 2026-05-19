@@ -862,3 +862,98 @@ button {
   overflow-y: auto;
   scrollbar-gutter: stable;
 }
+
+.play-page {
+  background: var(--bg);
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0 auto;
+  max-width: 480px;
+  min-height: 100vh;
+  padding: var(--space-3);
+}
+
+.play-page-header h1 {
+  font-size: 1.25rem;
+  margin: 0 0 var(--space-1);
+}
+
+.play-page-header p {
+  color: var(--muted);
+  margin: 0;
+}
+
+.play-setup-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+}
+
+.play-back-link {
+  color: var(--brand);
+  font-size: 0.85rem;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.play-back-link:hover {
+  text-decoration: underline;
+}
+
+.play-invite-code,
+.play-invite-hint code {
+  display: block;
+  font-size: 0.8rem;
+  margin-top: var(--space-1);
+  word-break: break-all;
+}
+
+.play-room-toolbar {
+  align-items: center;
+  display: flex;
+  gap: var(--space-2);
+  justify-content: space-between;
+  padding: var(--space-1) var(--space-2);
+}
+
+.play-room-id {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+.online-shell {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.online-banner {
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  display: flex;
+  flex-shrink: 0;
+  gap: var(--space-2);
+  justify-content: space-between;
+  margin: 0 var(--space-2);
+  padding: var(--space-1) var(--space-2);
+}
+
+.online-banner[data-turn="yours"] {
+  border-color: var(--brand);
+}
+
+.online-banner[data-turn="opponent"] {
+  color: var(--muted);
+}
+
+.online-error {
+  margin: 0 var(--space-2);
+}

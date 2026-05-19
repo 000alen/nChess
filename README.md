@@ -12,7 +12,11 @@ reference engine/model.
 
 The browser can also play against the Python engine through the Vercel
 serverless function at `/api/bot`. Game modes include human vs bot (default),
-bot vs bot, human vs human, and analysis. Choose a mode in Settings.
+bot vs bot, local human vs human, and analysis. Choose a mode in Settings.
+
+**Online human vs human:** use **Play online** (or `/play/new`) to create a
+room and share the link with an opponent. Moves are stored server-side; see
+`docs/online-multiplayer.md`.
 
 Dependency installs use pnpm with a repository-level minimum release age policy
 (`minimum-release-age=10080`, seven days) in `.npmrc`.

@@ -2,6 +2,7 @@
 
 import type { CSSProperties, ReactNode } from "react";
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -44,6 +45,7 @@ import {
   type PlayerKind,
   type PromotionKind,
 } from "@/lib/game-mode";
+import type { OnlineRoom, RoomMoveEntry } from "@/lib/game-room";
 
 type Slice = {
   coordinates: Position;
@@ -134,10 +136,46 @@ const BOARD_PRESETS: Array<{ label: string; config: BoardConfig }> = [
   { label: "4D Classic", config: DEFAULT_BOARD_CONFIG },
 ];
 
-export function NChessBoard() {
-  const [boardConfig, setBoardConfig] = useState<BoardConfig>(DEFAULT_BOARD_CONFIG);
-  const [draftConfig, setDraftConfig] = useState<BoardConfig>(DEFAULT_BOARD_CONFIG);
-  const [board, setBoard] = useState<BoardState>(() => createInitialBoard(DEFAULT_BOARD_CONFIG));
+function rebuildHistoryFromRoom(moves: RoomMoveEntry[]): MoveRecord[] {
+  return moves.map((entry) => ({
+    side: entry.side,
+    playerKind: "human" as const,
+    board: entry.boardAfter,
+    evaluation: evaluateBoard(entry.boardAfter),
+    evaluationSource: "local" as const,
+    id: `${entry.ply}-${positionKey(entry.move.from)}-${positionKey(entry.move.to)}`,
+    label: `${positionKey(entry.move.from)} → ${positionKey(entry.move.to)}`,
+    move: entry.move,
+    ply: entry.ply,
+    timeMs: entry.timeMs,
+  }));
+}
+
+export type NChessBoardOnlineConfig = {
+  room: OnlineRoom;
+  myColor: PieceColor;
+  movePending: boolean;
+  onMove: (move: Move, promotion?: PromotionKind) => Promise<void>;
+};
+
+export type NChessBoardProps = {
+  connection?: "local" | "online";
+  initialBoardConfig?: BoardConfig;
+  online?: NChessBoardOnlineConfig;
+};
+
+export function NChessBoard({
+  connection = "local",
+  initialBoardConfig,
+  online,
+}: NChessBoardProps = {}) {
+  const isOnline = connection === "online" && online !== undefined;
+  const startingConfig = initialBoardConfig ?? DEFAULT_BOARD_CONFIG;
+  const [boardConfig, setBoardConfig] = useState<BoardConfig>(startingConfig);
+  const [draftConfig, setDraftConfig] = useState<BoardConfig>(startingConfig);
+  const [board, setBoard] = useState<BoardState>(() => (
+    isOnline && online ? online.room.board : createInitialBoard(startingConfig)
+  ));
   const [selectedPosition, setSelectedPosition] = useState<Position | null>(null);
   const [moveHistory, setMoveHistory] = useState<MoveRecord[]>([]);
   const [currentPly, setCurrentPly] = useState(0);
@@ -182,11 +220,33 @@ export function NChessBoard() {
   const capturedPieces = useMemo(() => moveHistory.flatMap((record) => (
     record.capturedPiece ? [record.capturedPiece] : []
   )), [moveHistory]);
-  const canInteract =
-    !engineThinking
-    && !isViewingPast
-    && seats[board.turn].kind === "human";
+  const canInteract = isOnline
+    ? !online.movePending
+      && !isViewingPast
+      && online.room.status === "active"
+      && board.turn === online.myColor
+    : !engineThinking
+      && !isViewingPast
+      && seats[board.turn].kind === "human";
   const selectedMoves = legalMovesLoading ? [] : legalMoves;
+
+  useEffect(() => {
+    if (!isOnline || !online) {
+      return;
+    }
+    setSeats(seatsForMode("human-human"));
+    setBoard(online.room.board);
+    setBoardConfig(online.room.boardConfig);
+    setDraftConfig(online.room.boardConfig);
+    setMoveHistory(rebuildHistoryFromRoom(online.room.moves));
+    setCurrentPly(online.room.moves.length);
+    setSelectedPosition(null);
+    setLegalMoves([]);
+    setHintMove(null);
+    setHintError(null);
+    setAnalysisInfo(null);
+    setAnalysisMove(null);
+  }, [isOnline, online]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -455,6 +515,9 @@ export function NChessBoard() {
   }
 
   function jumpToPly(ply: number) {
+    if (isOnline) {
+      return;
+    }
     if (engineThinking) {
       return;
     }
@@ -497,7 +560,7 @@ export function NChessBoard() {
 
   async function requestHumanMove(move: Move) {
     const side = board.turn;
-    if (seats[side].kind !== "human") {
+    if (!isOnline && seats[side].kind !== "human") {
       return;
     }
 
@@ -507,6 +570,13 @@ export function NChessBoard() {
         pieceAt(board, move.from)?.kind === "pawn"
           ? humanPromotionChoice(seats, side)
           : undefined;
+
+      if (isOnline && online) {
+        await online.onMove(move, promotion);
+        setSelectedPosition(null);
+        return;
+      }
+
       const response = await fetch("/api/move", {
         method: "POST",
         headers: {
@@ -849,6 +919,11 @@ export function NChessBoard() {
           <strong>{board.dimension}D Chess Arena</strong>
         </div>
         <div className="top-bar-actions">
+          {!isOnline ? (
+            <Link className="theme-toggle" href="/play/new">
+              Play online
+            </Link>
+          ) : null}
           <SettingsMenu
             engineColor={engineColor}
             engineDepth={engineDepth}
@@ -931,7 +1006,11 @@ export function NChessBoard() {
           <div className="side-panel-status">
             <div className="panel-title">
               <h2>Game state</h2>
-              <span>{gameModeLabel(gameMode)}</span>
+              <span>
+                {isOnline && online
+                  ? `Online · ${online.myColor}`
+                  : gameModeLabel(gameMode)}
+              </span>
             </div>
             <div className="status">
               <span>Turn</span>
@@ -956,17 +1035,21 @@ export function NChessBoard() {
           </div>
 
           <div className="actions">
-            <button className="primary-button" type="button" onClick={resetGame}>
-              Reset
-            </button>
-            <button
-              className="primary-button"
-              type="button"
-              onClick={() => setNewGameOpen(true)}
-            >
-              New game…
-            </button>
-            {allowsHint(gameMode) ? (
+            {!isOnline ? (
+              <>
+                <button className="primary-button" type="button" onClick={resetGame}>
+                  Reset
+                </button>
+                <button
+                  className="primary-button"
+                  type="button"
+                  onClick={() => setNewGameOpen(true)}
+                >
+                  New game…
+                </button>
+              </>
+            ) : null}
+            {allowsHint(gameMode) && !isOnline ? (
               <button
                 className="secondary-button"
                 type="button"
@@ -978,7 +1061,7 @@ export function NChessBoard() {
                 {hintThinking ? "Hint..." : "Hint"}
               </button>
             ) : null}
-            {allowsManualEngineMove(seats, board.turn) ? (
+            {!isOnline && allowsManualEngineMove(seats, board.turn) ? (
               <button
                 className="secondary-button"
                 type="button"
@@ -990,7 +1073,7 @@ export function NChessBoard() {
                 Engine move
               </button>
             ) : null}
-            {isAutoPlayMode(gameMode) ? (
+            {!isOnline && isAutoPlayMode(gameMode) ? (
               <button
                 className="secondary-button"
                 type="button"
@@ -1008,7 +1091,7 @@ export function NChessBoard() {
                 {autoPlayPaused ? "Play" : "Pause"}
               </button>
             ) : null}
-            {allowsPassTurn(gameMode) ? (
+            {!isOnline && allowsPassTurn(gameMode) ? (
               <button
                 className="secondary-button"
                 type="button"
